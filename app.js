@@ -4,6 +4,8 @@
  * ===================================================================== */
 
 const ADMIN_CFG_KEY = 'wp_admin_cfg_v1';
+/* 站点内置默认仓库（公开信息，随站点交付；令牌 PAT 仍需本机填写） */
+const SITE_DEFAULTS = { owner: '1yk8u', repo: 'wallpaper', branch: 'main' };
 const UNLOCK_KEY = 'wp_unlocked_v1';
 const DEFAULT_ADMIN_PWD = '12345678';
 const PWD_SALT = 'wp-site::v1::';
@@ -261,27 +263,29 @@ async function tryUnlock() {
 
 /* =============== 设置：仓库配置 =============== */
 function fillCfgForm() {
-  if (!adminCfg) return;
-  $id('cfg-owner').value = adminCfg.owner || '';
-  $id('cfg-repo').value = adminCfg.repo || '';
-  $id('cfg-branch').value = adminCfg.branch || 'main';
-  $id('cfg-pat').value = adminCfg.pat || '';
+  const c = adminCfg || SITE_DEFAULTS;
+  $id('cfg-owner').value = c.owner || SITE_DEFAULTS.owner;
+  $id('cfg-repo').value = c.repo || SITE_DEFAULTS.repo;
+  $id('cfg-branch').value = c.branch || SITE_DEFAULTS.branch;
+  $id('cfg-pat').value = (adminCfg && adminCfg.pat) || '';
 }
 
 function saveCfg() {
-  const owner = $id('cfg-owner').value.trim();
-  const repo = $id('cfg-repo').value.trim();
-  const branch = $id('cfg-branch').value.trim() || 'main';
   const pat = $id('cfg-pat').value.trim();
   const msg = $id('cfg-msg');
-  if (!owner || !repo || !pat) {
-    msg.textContent = '用户名、仓库名、令牌都要填写哦';
+  if (!pat) {
+    msg.textContent = '请填写 GitHub 令牌（PAT）哦 —— 用户名 / 仓库名已自动填好';
     msg.className = 'msg bad';
     return;
   }
-  adminCfg = { owner, repo, branch, pat };
+  adminCfg = Object.assign({}, SITE_DEFAULTS, {
+    owner: $id('cfg-owner').value.trim() || SITE_DEFAULTS.owner,
+    repo: $id('cfg-repo').value.trim() || SITE_DEFAULTS.repo,
+    branch: $id('cfg-branch').value.trim() || SITE_DEFAULTS.branch,
+    pat,
+  });
   localStorage.setItem(ADMIN_CFG_KEY, JSON.stringify(adminCfg));
-  msg.textContent = '✅ 已保存（仅保存在本机浏览器）';
+  msg.textContent = '✅ 已保存（令牌仅保存在本机浏览器）';
   msg.className = 'msg ok';
 }
 

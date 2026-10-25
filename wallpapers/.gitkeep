@@ -1,0 +1,4 @@
+# 把壁纸文件放进这个文件夹（封面图、视频、GIF 都可以）
+# 支持子文件夹；文件名就是标题（去掉扩展名）
+# 支持格式：jpg / jpeg / png / webp / avif / gif / mp4 / mov / webm / m4v
+# 上传后 GitHub Actions 会自动生成网站清单 data/wallpapers.json

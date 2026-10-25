@@ -1,0 +1,11 @@
+{
+  "name": "壁纸库 Wallpaper Hub",
+  "short_name": "壁纸库",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0d1017",
+  "theme_color": "#0d1017",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

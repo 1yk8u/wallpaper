@@ -29,30 +29,46 @@ function gitBlobId(path) {
 
 function scan(dir) {
   const items = [];
+  const coverSuffix = /^(.+)\.cover\.(jpe?g|png|webp|gif)$/i;
   let entries = [];
   try { entries = readdirSync(dir, { withFileTypes: true }); } catch (e) { return items; }
+  const filesInDir = [];
   for (const d of entries) {
     if (d.name.startsWith('.')) continue;
     const full = join(dir, d.name);
     if (d.isDirectory()) { items.push(...scan(full)); continue; }
-    if (!isVideo(d.name) && !isGif(d.name) && !isImage(d.name)) continue;
+    filesInDir.push({ name: d.name, full });
+  }
+  const covers = new Map();
+  for (const f of filesInDir) {
+    const m = coverSuffix.exec(f.name);
+    if (m) covers.set(m[1].toLowerCase(), f.full);
+  }
+  for (const f of filesInDir) {
+    if (coverSuffix.test(f.name)) continue;
+    if (!isVideo(f.name) && !isGif(f.name) && !isImage(f.name)) continue;
 
-    const rel = relative(WALLPAPER_DIR, full).split(sep).join('/');
-    let id = gitBlobId(full) || createHash('sha1').update(readFileSync(full)).digest('hex').slice(0, 10);
-    const ts = gitTime(full) || Math.floor((statSync(full).mtimeMs || Date.now()) / 1000);
-    const title = d.name.replace(/\.[^.]+$/, '').replace(/[_\-]+/g, ' ').trim() || d.name;
+    const rel = relative(WALLPAPER_DIR, f.full).split(sep).join('/');
+    const dot = f.name.lastIndexOf('.');
+    const baseKey = (dot > 0 ? f.name.slice(0, dot) : f.name).toLowerCase();
+    const coverFull = covers.get(baseKey);
+    let id = gitBlobId(f.full) || createHash('sha1').update(readFileSync(f.full)).digest('hex').slice(0, 10);
+    const ts = gitTime(f.full) || Math.floor((statSync(f.full).mtimeMs || Date.now()) / 1000);
+    const title = f.name.replace(/\.[^.]+$/, '').replace(/\.\d+$/, '').replace(/[_\-]+/g, ' ').trim() || f.name;
 
-    items.push({
+    const item = {
       id: 'w' + id,
-      name: d.name,
+      name: f.name,
       title,
-      kind: isVideo(d.name) ? 'video' : 'image',
-      gif: isGif(d.name),
+      kind: isVideo(f.name) ? 'video' : 'image',
+      gif: isGif(f.name),
       url: 'wallpapers/' + rel,
-      size: statSync(full).size,
+      size: statSync(f.full).size,
       date: new Date(ts * 1000).toISOString(),
       src: 'file',
-    });
+    };
+    if (coverFull) item.cover = 'wallpapers/' + relative(WALLPAPER_DIR, coverFull).split(sep).join('/');
+    items.push(item);
   }
   return items;
 }

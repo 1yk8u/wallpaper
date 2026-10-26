@@ -63,6 +63,8 @@ async function loadData(silent) {
   }
 }
 
+function mediaOf(u) { u = String(u || ''); return /^https?:\/\//i.test(u) ? u : encodeURI(u); }
+
 function mediaURL(it) {
   const u = String(it.url || '');
   if (/^https?:\/\//i.test(u)) return u;           // 外部直链
@@ -100,9 +102,8 @@ function thumbHTML(it) {
   const dyn = itemDyn(it);
   const badge = `<span class="badge">${dyn ? '动态' : '静态'}</span>`;
   if (it.kind === 'video') {
-    return `${badge}<div class="vid-ph">
-      <svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg>
-      </div><span class="play-tag"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4L19 12z"/></svg>视频壁纸</span>`;
+    const cover = it.cover ? `<img loading="lazy" src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover">` : '';
+    return `${badge}<div class="vid-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg></div><span class="play-tag"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4L19 12z"/></svg>视频壁纸</span>`;
   }
   const img = `<img loading="lazy" src="${escAttr(mediaURL(it))}" alt="${esc(it.title || '')}">`;
   if (it.gif) return badge + img + '<span class="play-tag">GIF</span>';
@@ -131,7 +132,9 @@ function openDetail(it) {
   $id('d-title').textContent = it.title || '未命名';
   const m = $id('d-media');
   if (it.kind === 'video') {
-    m.innerHTML = `<video controls playsinline preload="metadata" src="${escAttr(mediaURL(it))}"></video>`;
+    m.innerHTML = it.cover
+      ? `<video controls playsinline preload="metadata" poster="${escAttr(mediaOf(it.cover))}" src="${escAttr(mediaURL(it))}"></video>`
+      : `<video controls playsinline preload="metadata" src="${escAttr(mediaURL(it))}"></video>`;
   } else {
     m.innerHTML = `<img src="${escAttr(mediaURL(it))}" alt="${esc(it.title || '')}">`;
   }
@@ -586,7 +589,7 @@ const WPGH = {
   },
 };
 
-/* files: File[] 或 [{name, bytes(Uint8Array|ArrayBuffer), size, itemExtra}] */
+/* files: File[] 或 [{name, bytes(Uint8Array|ArrayBuffer), size, itemExtra, coverName, coverBytes}] */
 async function commitFilesInner(config, opt) {
   const cl = config;
   const list = Array.from(cl || []);
@@ -638,6 +641,11 @@ async function commitFilesInner(config, opt) {
       tree.push({ path: 'wallpapers/' + prepared[idx], mode: '100644', type: 'blob', sha: sha });
       const it = buildItem(prepared[idx], fileTitle_ || null);
       it.size = bytes.byteLength || f.size || null;
+      if (f.coverName && f.coverBytes) {
+        const coverSha = await ghCreateBlob(f.coverBytes instanceof Uint8Array ? f.coverBytes : new Uint8Array(f.coverBytes));
+        tree.push({ path: 'wallpapers/' + f.coverName, mode: '100644', type: 'blob', sha: coverSha });
+        it.cover = 'wallpapers/' + f.coverName;
+      }
       if (f.itemExtra) Object.assign(it, f.itemExtra);
       committed.push(it);
     }

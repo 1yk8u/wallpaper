@@ -37,34 +37,77 @@ function withTimeout(p, ms, label) {
   return Promise.race([p, gate]).finally(() => clearTimeout(t));
 }
 
-/* ---------------- CORS 代理通道 ---------------- */
-const TEXT_PROXIES = [
-  { label: 'allorigins', mk: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u) },
-  { label: 'codetabs',   mk: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u) },
+/* ---------------- CORS 代理通道（多通道并发竞速 + 冷却降级） ---------------- */
+const PROXY_TEXT = [
+  { label: 'cors/workers', mk: u => 'https://test.cors.workers.dev/?' + u, bin: true },
+  { label: 'allorigins/raw', mk: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), bin: true },
+  { label: 'codetabs', mk: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), bin: true },
+  { label: 'allorigins/get', wrap: async u => {
+      const r = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(u));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      return new Response((j && j.contents != null) ? String(j.contents) : '', { status: 200, headers: { 'Content-Type': (j && j.contentType) || 'text/plain; charset=utf-8' } });
+    } },
+  { label: 'cors/eu', mk: u => 'https://cors.eu.org/' + u, bin: true },
+  { label: 'jina', mk: u => 'https://r.jina.ai/' + u, textOnly: true }, /* 快照文本,适合页面元数据 */
 ];
-/* 支持 POST 转发的通道（快手主页批量用） */
+/* 支持 POST 转发的通道（快手 GraphQL 用） */
 const POST_PROXIES = [
-  { label: 'corsworkers', mk: u => 'https://test.cors.workers.dev/?' + u },
-  { label: 'corslol',     mk: u => 'https://api.cors.lol/?url=' + encodeURIComponent(u) },
+  { label: 'cors/workers', mk: u => 'https://test.cors.workers.dev/?' + u },
+  { label: 'cors/lol', mk: u => 'https://api.cors.lol/?url=' + encodeURIComponent(u) },
 ];
+/* 兼容旧名字（批量搬运等既有代码） */
+const TEXT_PROXIES = PROXY_TEXT;
+
+/* 通道冷却状态：失败的通道 10 分钟内排到队尾，直连失败 5 分钟内不再抢第一 */
+const PXKEY = 'wp_px_state_v1';
+function pxState() { try { return JSON.parse(localStorage.getItem(PXKEY) || '{}'); } catch (e) { return {}; } }
+function pxPenalize(label, ms) {
+  const s = pxState(); s[label] = Date.now() + (ms || 6e5);
+  try { localStorage.setItem(PXKEY, JSON.stringify(s)); } catch (e) {}
+}
+function pxRank(label) { const t = pxState()[label]; return (typeof t === 'number' && t < Date.now()) ? 1 : 0; }
+
+function orderedChannels(chans) {
+  return chans.slice().sort((a, b) => pxRank(a.label) - pxRank(b.label));
+}
+
+/* 并发竞速：每轮把 wave 条通道一起发射，任何一条成功立即返回 */
+async function raceFetch(chans, url, opt) {
+  opt = opt || {};
+  const ms = opt.ms || 20000;
+  const wave = Math.max(1, opt.wave || 2);
+  let list = orderedChannels(chans.filter(c => (opt.binary ? !c.textOnly : true)));
+  const errs = [];
+  while (list.length) {
+    const group = list.splice(0, wave);
+    const settled = await Promise.allSettled(group.map(async (c) => {
+      let resp;
+      if (c.wrap) resp = await withTimeout(c.wrap(url), ms, c.label + ' 超时');
+      else resp = await withTimeout(fetch(c.mk(url)), ms, c.label + ' 超时');
+      if (!resp || !resp.ok) throw new Error(c.label + ' HTTP ' + (resp ? resp.status : '网络错误'));
+      return { c, resp };
+    }));
+    let got = null;
+    settled.forEach((s, i) => {
+      if (s.status === 'fulfilled') { if (!got) got = s.value; }
+      else {
+        errs.push((s.reason && s.reason.message) || String(s.reason));
+        pxPenalize(group[i].label);
+      }
+    });
+    if (got) return got;
+  }
+  throw new Error('全部通道失败（' + errs.slice(0, 3).join('；') + '）');
+}
 
 async function fetchTextSmart(url, opt) {
   opt = opt || {};
-  const ms = opt.ms || 18000;
-  const errs = [];
-  try {
-    const r = await withTimeout(fetch(url), ms);
-    if (r.ok) { const t = await r.text(); if (t) return t; }
-    errs.push('直连 HTTP ' + r.status);
-  } catch (e) { errs.push('直连: ' + (e.message || e)); }
-  for (const p of TEXT_PROXIES) {
-    try {
-      const r = await withTimeout(fetch(p.mk(url)), ms);
-      if (r.ok) { const t = await r.text(); if (t && t.length) return t; }
-      errs.push(p.label + ' HTTP ' + r.status);
-    } catch (e) { errs.push(p.label + ': ' + (e.message || e)); }
-  }
-  throw new Error('所有通道均失败（' + errs.slice(0, 3).join('；') + '）');
+  if (opt.ms == null) opt.ms = 22000;
+  const { resp } = await raceFetch(PROXY_TEXT, url, { ms: opt.ms, wave: 2 });
+  const t = await resp.text();
+  if (!t) throw new Error('通道返回了空内容');
+  return t;
 }
 
 async function fetchJSONSmart(url, opt) {
@@ -76,22 +119,24 @@ async function fetchJSONSmart(url, opt) {
 async function fetchBlobSmart(url, opt) {
   opt = opt || {};
   const ms = opt.ms || 120000;
-  const attempt = async (r) => {
-    if (!r.ok) return null;
-    const b = await r.blob();
-    if (b.size > 0 && !/text\/html/i.test(b.type)) return b;
-    return null;
+  const asBlob = async (resp) => {
+    const b = await resp.blob();
+    if (b.size > 0 && !/^\s*(text\/html|application\/json)/i.test(b.type || '')) return b;
+    throw new Error('返回内容不是媒体文件');
   };
+  /* 直连优先：B站/小红书/部分CDN 其实允许跨域直接读 */
   try {
-    const b = await attempt(await withTimeout(fetch(url), ms));
-    if (b) return b;
-  } catch (e) { /* 忽略，走代理 */ }
-  for (const p of TEXT_PROXIES) {
+    const resp = await withTimeout(fetch(url), Math.min(ms, 30000), '直连超时');
+    return await asBlob(resp);
+  } catch (e) { pxPenalize('直连', 3e5); }
+  /* 走代理并发竞速；raceFetch 只挑 到指定的通道 */
+  for (let round = 0; round < 2; round++) {
     try {
-      const b = attempt(await withTimeout(fetch(p.mk(url)), ms));
-      const res = await b;
-      if (res) return res;
-    } catch (e) { /* 下一个 */ }
+      const picked = PROXY_TEXT.filter(p => p.bin && !p.textOnly);
+      const { resp } = await raceFetch(picked, url, { ms, wave: 2, binary: true });
+      const b = await asBlob(resp);
+      return b;
+    } catch (e) { await sleep(round ? 1500 : 300); }
   }
   return null;
 }

@@ -154,10 +154,10 @@ async function downloadViaBlob(url, filename) {
 }
 
 async function downloadSmart(url, filename) {
-  toast('⬇️ 开始下载…');
+  toast('↓️ 开始下载…');
   try {
     const ok = await downloadViaBlob(url, filename);
-    if (ok) { toast('✅ 已开始保存', 'ok'); return true; }
+    if (ok) { toast('已开始保存', 'ok'); return true; }
   } catch (e) { /* 继续兜底 */ }
   window.open(url, '_blank', 'noopener');
   toast(isIOS

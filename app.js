@@ -248,13 +248,13 @@ async function tryUnlock() {
   try {
     const ok = await checkPwd(p);
     if (ok) {
-      msg.textContent = '✅ 校验通过';
+      msg.textContent = '校验通过';
       msg.className = 'msg ok';
       unlocked = true;
       sessionStorage.setItem(UNLOCK_KEY, '1');
       $id('admin-pwd').value = '';
       refreshSettingsView();
-      toast('✅ 已解锁管理员设置');
+      toast('已解锁管理员设置');
     } else {
       msg.textContent = '密码错误';
       msg.className = 'msg bad';
@@ -288,7 +288,7 @@ function saveCfg() {
     pat,
   });
   localStorage.setItem(ADMIN_CFG_KEY, JSON.stringify(adminCfg));
-  msg.textContent = '✅ 已保存（令牌仅保存在本机浏览器）';
+  msg.textContent = '已保存（令牌仅保存在本机浏览器）';
   msg.className = 'msg ok';
 }
 
@@ -298,10 +298,10 @@ async function testCfg() {
   msg.textContent = '连接中…'; msg.className = 'msg';
   try {
     const j = await gh('/contents/data?ref=' + encodeURIComponent(adminCfg.branch));
-    msg.textContent = '✅ 连接成功，访问仓库 ' + adminCfg.owner + '/' + adminCfg.repo + ' 正常';
+    msg.textContent = '连接成功，访问仓库 ' + adminCfg.owner + '/' + adminCfg.repo + ' 正常';
     msg.className = 'msg ok';
   } catch (e) {
-    msg.textContent = '❌ ' + (e.message || e) + '（401=令牌无效；404=仓库/分支不存在）';
+    msg.textContent = '' + (e.message || e) + '（401=令牌无效；404=仓库/分支不存在）';
     msg.className = 'msg bad';
   }
 }
@@ -455,11 +455,11 @@ async function doUpload() {
     $id('up-files').value = '';
     $id('up-rows').innerHTML = '';
     uploadQueue = [];
-    msg.textContent = '✅ 已提交到仓库！约 1~2 分钟后正式上线（之后刷新页面即可看到）';
+    msg.textContent = '已提交到仓库！约 1~2 分钟后正式上线（之后刷新页面即可看到）';
     msg.className = 'msg ok';
-    toast('上传提交成功，稍后自动上线 🎉');
+    toast('上传提交成功，稍后自动上线');
   } catch (e) {
-    msg.textContent = '❌ 上传失败：' + (e.message || e);
+    msg.textContent = '上传失败：' + (e.message || e);
     msg.className = 'msg bad';
   } finally {
     btn.disabled = false;
@@ -499,10 +499,10 @@ async function addLink() {
     allItems.unshift(entry);
     renderAll();
     $id('link-url').value = ''; $id('link-title').value = '';
-    msg.textContent = '✅ 直链已保存，网站约 1~2 分钟后更新';
+    msg.textContent = '直链已保存，网站约 1~2 分钟后更新';
     msg.className = 'msg ok';
   } catch (e) {
-    msg.textContent = '❌ ' + (e.message || e);
+    msg.textContent = '' + (e.message || e);
     msg.className = 'msg bad';
   }
 }
@@ -539,7 +539,7 @@ async function deleteItem(id) {
     allItems = allItems.filter(x => x.id !== id);
     renderAll();
     renderManage();
-    toast('✅ 已删除，仓库部署完成后网站自动更新');
+    toast('已删除，仓库部署完成后网站自动更新');
   } catch (e) {
     toast('删除失败：' + (e.message || e), 'bad');
   }
@@ -569,10 +569,10 @@ async function changePwd() {
     });
     pwdHash = h;
     $id('old-pwd').value = ''; $id('new-pwd').value = '';
-    msg.textContent = '✅ 密码已修改，全网生效约需 1~2 分钟。请记住新密码！';
+    msg.textContent = '密码已修改，全网生效约需 1~2 分钟。请记住新密码！';
     msg.className = 'msg ok';
   } catch (e) {
-    msg.textContent = '❌ 修改失败：' + (e.message || e);
+    msg.textContent = '修改失败：' + (e.message || e);
     msg.className = 'msg bad';
   }
 }
@@ -653,7 +653,7 @@ async function commitFilesInner(config, opt) {
       baseSha: ref.baseSha, baseTree: ref.baseTree, tree,
       message: '上传壁纸 ' + (start + 1) + '~' + (start + tree.length) + ' / ' + total,
     });
-    for (let k = 0; k < slice.length; k++) onStatus(start + k, '✅ 已提交', 'ok');
+    for (let k = 0; k < slice.length; k++) onStatus(start + k, '已提交', 'ok');
   }
   return committed;
 }

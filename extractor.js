@@ -287,10 +287,10 @@ function renderResult(r, plat) {
   } else {
     countNote = `<span class="st">共 ${r.images.length} 张</span>`;
     media = '<div class="ex-imggrid">' + r.images.map((u, i) =>
-      `<div class="iw"><img loading="lazy" src="${escAttr(u)}" alt="${esc(title)}"><button class="dl" data-dl="${i}">⬇</button></div>`).join('') + '</div>';
+      `<div class="iw"><img loading="lazy" src="${escAttr(u)}" alt="${esc(title)}"><button class="dl" data-dl="${i}">↓</button></div>`).join('') + '</div>';
   }
   box.innerHTML =
-    `<div class="ex-title">✅ ${esc(title)}</div>
+    `<div class="ex-title">${esc(title)}</div>
      ${media}
      <div class="d-meta">${plat.name}${countNote ? ' · ' + countNote : ''}</div>
      <div class="ex-actions">
@@ -312,13 +312,13 @@ function renderResult(r, plat) {
       await downloadViaBlob(r.images[i], fileTitle(r.images[i].split('/').pop() || '') + '.jpg');
       if (i < r.images.length - 1) { await sleep(400); if (isIOS) toast('iPhone 一次只能保存一张，逐张下载中(' + (i + 1) + '/' + r.images.length + ')，请保持页面在前台', 'warn'); }
     }
-    toast('✅ 批量下载完成');
+    toast('批量下载完成');
   });
-  $id('ex-dl-one')  && ($id('ex-dl-one').onclick = () => toast('点图片右上角的 ⬇ 按钮逐张下载'));
+  $id('ex-dl-one')  && ($id('ex-dl-one').onclick = () => toast('点图片右上角的 ↓ 按钮逐张下载'));
   $id('ex-open')    && ($id('ex-open').onclick = () => window.open(r.kind === 'video' ? r.play : r.images[0], '_blank', 'noopener'));
   $id('ex-copy')    && ($id('ex-copy').onclick = () => copyText(r.kind === 'video' ? r.play : r.images[0]));
   box.querySelectorAll('.dl').forEach(b => {
-    b.onclick = () => { const u = r.images[Number(b.dataset.dl)]; downloadViaBlob(u, fileTitle(u.split('/').pop() || '') + '.jpg'); toast('⬇️ 开始下载…'); };
+    b.onclick = () => { const u = r.images[Number(b.dataset.dl)]; downloadViaBlob(u, fileTitle(u.split('/').pop() || '') + '.jpg'); toast('↓️ 开始下载…'); };
   });
   const v = box.querySelector('video'); if (v) v.addEventListener('error', () => {
     const note = document.createElement('p'); note.className = 'hint'; note.style.color = '#fbbf24';
@@ -330,7 +330,7 @@ function renderResult(r, plat) {
 async function autoImportAfterParse(r, plat) {
   // 检查是否已配置仓库
   if (typeof WPGH === 'undefined' || !WPGH.cfg || !WPGH.cfg.pat || !WPGH.cfg.owner || !WPGH.cfg.repo) {
-    toast('解析成功！想要“一键存入壁纸库”，请去 ⚙️ 设置里先填好 GitHub 用户名 / 仓库名 / 令牌。', 'warn');
+    toast('解析成功！想要“一键存入壁纸库”，请去 设置里先填好 GitHub 用户名 / 仓库名 / 令牌。', 'warn');
     return;
   }
   try {
@@ -342,14 +342,14 @@ async function autoImportAfterParse(r, plat) {
     });
     committed.forEach(it => { try { allItems.unshift(it); } catch (e) {} });
     try { renderAll(); } catch (e) {}
-    setStatus('🎉 已自动存入壁纸库！线上生效约需 1~2 分钟。已为你切到「壁纸」页，直接下载/长按保存即可。', 'ok');
+    setStatus('已自动存入壁纸库！线上生效约需 1~2 分钟。已为你切到「壁纸」页，直接下载/长按保存即可。', 'ok');
     hideResult();
     // 自动切换标签到壁纸页
     const g = document.querySelector('.tab[data-tab="gallery"]'); if (g && !g.classList.contains('active')) g.click();
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    toast('已存入壁纸库 🎉');
+    toast('已存入壁纸库');
   } catch (e) {
-    setStatus('⚠️ 自动入库没成功：' + (e.message || e) + '。已切换为手动模式，下面可以直接下载。', 'bad');
+    setStatus('自动入库没成功：' + (e.message || e) + '。已切换为手动模式，下面可以直接下载。', 'bad');
   }
 }
 
@@ -537,7 +537,7 @@ function renderBatch(items) {
   const box = $id('ex-result');
   box.classList.remove('hidden');
   box.innerHTML =
-    `<div class="ex-title">✅ 抓取成功：${items.length} 个作品</div>
+    `<div class="ex-title">抓取成功：${items.length} 个作品</div>
      <p class="hint">已默认全选 📌 批量下载到设备：iPhone 一次只能允许一个下载，作品多时建议分批；「搬运到壁纸库」会把视频/图片永久存进你的 GitHub 仓库。</p>
      <div class="batch-rows">${items.map((it, i) => batchRowHTML(it, i)).join('')}</div>
      <div class="batch-bar">
@@ -581,19 +581,19 @@ async function batchDownload() {
     const name = 'ks' + x.it.photoId + (x.it.kind === 'video' ? '.mp4' : '.jpg');
     let ok = false;
     try { ok = await downloadViaBlob(x.it.url, name); } catch (e) { ok = false; }
-    if (ok) { okN++; batchStatus(x.i, '✅ 已保存', 'ok'); }
-    else { failN++; batchStatus(x.i, '⚠️ 打开手动保存', 'bad'); }
+    if (ok) { okN++; batchStatus(x.i, '已保存', 'ok'); }
+    else { failN++; batchStatus(x.i, '打开手动保存', 'bad'); }
     await sleep(isIOS ? 1600 : 500);
   }
   batchBusy = false;
   toast('批量下载完成：成功 ' + okN + '，失败 ' + failN, failN ? 'warn' : 'ok');
-  if (failN) setStatus('⚠️ 有 ' + failN + ' 个下载失败（CDN 防盗链或太大）。可先点开单个链接手动保存，或稍后重试。', 'bad');
+  if (failN) setStatus('有 ' + failN + ' 个下载失败（CDN 防盗链或太大）。可先点开单个链接手动保存，或稍后重试。', 'bad');
 }
 
 async function batchImport() {
   if (batchBusy) return;
   if (!WPGH.ensureCfg($id('ex-status'))) {
-    setStatus('「搬运到壁纸库」需要管理员：⚙️ 设置 → 输入密码 12345678 → 仓库配置里粘贴一次 GitHub 令牌（用户名/仓库名已自动填好）', 'bad');
+    setStatus('「搬运到壁纸库」需要管理员：设置 → 输入密码 12345678 → 仓库配置里粘贴一次 GitHub 令牌（用户名/仓库名已自动填好）', 'bad');
     return;
   }
   const list = batchItems.map((it, i) => ({ it, i })).filter(x => batchSel.has(x.it.photoId));
@@ -628,12 +628,12 @@ async function batchImport() {
       batchStatus(x.i, '已有内容，待提交', 'busy');
     } catch (e) {
       failN++;
-      batchStatus(x.i, '❌ ' + (e.message || e), 'bad');
+      batchStatus(x.i, '' + (e.message || e), 'bad');
     }
   }
   if (!entries.length) {
     batchBusy = false;
-    setStatus('❌ 没有抓到任何内容：' + failN + ' 个失败。可能 CDN 限制了跨域，可改用「下载到设备」或逐个解析。', 'bad');
+    setStatus('没有抓到任何内容：' + failN + ' 个失败。可能 CDN 限制了跨域，可改用「下载到设备」或逐个解析。', 'bad');
     return;
   }
   try {
@@ -643,12 +643,12 @@ async function batchImport() {
     });
     committed.forEach(it => { try { allItems.unshift(it); } catch (e) {} });
     if (typeof renderAll === 'function') renderAll();
-    setStatus('🎉 搬运完成：' + committed.length + ' 个已永久存入仓库' +
+    setStatus('搬运完成：' + committed.length + ' 个已永久存入仓库' +
       (failN ? '，' + failN + ' 个抓取失败' : '') +
       '。约 1~2 分钟后自动上线，去「壁纸」页刷新查看！', 'ok');
-    toast('搬运完成 🎉');
+    toast('搬运完成');
   } catch (e) {
-    setStatus('❌ 提交仓库失败：' + (e.message || e), 'bad');
+    setStatus('提交仓库失败：' + (e.message || e), 'bad');
   } finally {
     batchBusy = false;
   }
@@ -696,7 +696,7 @@ async function startExtract() {
       statusBusy('进入批量搬运模式（' + plat.name + '用户 ' + uid + '）…');
       const items = await fetchKsProfileAll(uid);
       curResult = null;
-      setStatus('📦 主页搬运模式', 'ok');
+      setStatus('主页搬运模式', 'ok');
       renderBatch(items);
       return;
     }
@@ -715,7 +715,7 @@ async function startExtract() {
     autoImportAfterParse(r, plat); /* 后台自动入库，不阻塞界面 */
   } catch (e) {
     curResult = null;
-    setStatus('❌ 解析失败：' + (e.message || e), 'bad');
+    setStatus('解析失败：' + (e.message || e), 'bad');
     showFailHelp(url);
   } finally {
     exBusy = false;

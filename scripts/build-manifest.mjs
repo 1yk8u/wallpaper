@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const WALLPAPER_DIR = process.cwd() + '/wallpapers';
 const DATA_DIR = process.cwd() + '/data';
+const THUMB_DIR = process.cwd() + '/thumbs';
 
 const isVideo = (n) => /\.(mp4|mov|webm|m4v)$/i.test(n);
 const isGif = (n) => /\.gif$/i.test(n);
@@ -68,6 +69,8 @@ function scan(dir) {
       src: 'file',
     };
     if (coverFull) item.cover = 'wallpapers/' + relative(WALLPAPER_DIR, coverFull).split(sep).join('/');
+    const tbBase = (dot > 0 ? f.name.slice(0, dot) : f.name) + '.webp';
+    if (existsSync(join(THUMB_DIR, tbBase))) item.thumb = 'thumbs/' + tbBase;
     items.push(item);
   }
   return items;

@@ -105,7 +105,7 @@ function thumbHTML(it) {
     const cover = it.cover ? `<img loading="lazy" src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover">` : '';
     return `${badge}<div class="vid-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg></div><span class="play-tag"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4L19 12z"/></svg>视频壁纸</span>`;
   }
-  const img = `<img loading="lazy" src="${escAttr(mediaURL(it))}" alt="${esc(it.title || '')}">`;
+  const img = `<img loading="lazy" src="${escAttr(it.thumb ? mediaOf(it.thumb) : mediaURL(it))}" alt="${esc(it.title || '')}">`;
   if (it.gif) return badge + img + '<span class="play-tag">GIF</span>';
   return badge + img;
 }

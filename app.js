@@ -63,7 +63,12 @@ async function loadData(silent) {
   }
 }
 
-function mediaOf(u) { u = String(u || ''); return /^https?:\/\//i.test(u) ? u : encodeURI(u); }
+function mediaOf(u) {
+  u = String(u || '');
+  if (/^https?:\/\//i.test(u)) return u;
+  /* 相对路径里 # 和 ? 都是 URL 保留字符，会把地址截断成锚点/查询 → 必须%转义 */
+  return encodeURI(u).replace(/#/g, '%23').replace(/\?/g, '%3F');
+}
 
 function mediaURL(it) {
   const u = String(it.url || '');

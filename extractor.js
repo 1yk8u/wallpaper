@@ -724,7 +724,9 @@ async function startExtract() {
     if (plat.key === 'kuaishou') {
       const ce = await ksCacheLookup(url);
       if (ce && ce.images && ce.images.length) {
-        const r = { kind: 'images', images: ce.images, title: ce.title || '快手图集', cover: ce.cover || ce.images[0], cached: true };
+        /* 仓库内路径在本环节一次性做 URL 编码（含 # → %23），显示/下载/打开共用 */
+        const enc = (u) => (/^https?:\/\//i.test(u) ? u : mediaOf(u));
+        const r = { kind: 'images', images: ce.images.map(enc), title: ce.title || '快手图集', cover: enc(ce.cover || ce.images[0]), cached: true };
         curResult = r;
         setStatus('命中自有解析缓存，直接出图', 'ok');
         renderResult(r, { name: '自有缓存' });

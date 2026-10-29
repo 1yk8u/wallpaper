@@ -55,12 +55,28 @@ function scan(dir) {
     const coverFull = covers.get(baseKey);
     let id = gitBlobId(f.full) || createHash('sha1').update(readFileSync(f.full)).digest('hex').slice(0, 10);
     const ts = gitTime(f.full) || Math.floor((statSync(f.full).mtimeMs || Date.now()) / 1000);
-    const title = f.name.replace(/\.[^.]+$/, '').replace(/\.\d+$/, '').replace(/[_\-]+/g, ' ').trim() || f.name;
+/* 品类自动归类：标题关键词 → 分类（首个命中即定） */
+const CAT_RULES = [
+  ['二次元', /二次元|动漫|漫画|插画|番剧|角色|女友|女主|女神|美图|可爱|小可爱/i],
+  ['汽车', /汽车|跑车|机车|超跑|摩托|赛车|Model|奔驰|宝马|奥迪/i],
+  ['风景', /风景|山水|雪|海|日落|星空|自然|湖泊|森林|城市|天空|旅行|山间|瀑布|枫|樱/i],
+  ['萌宠', /猫|狗|柴犬|柯基|宠物|滚滚/i],
+  ['游戏', /游戏|原神|王者|崩坏|明日方舟|塞尔达/i],
+  ['文字', /文字|语录|签名|哲理|句/i],
+];
+function catOf(title) {
+  const t = String(title || '');
+  for (const [cat, re] of CAT_RULES) { if (re.test(t)) return cat; }
+  return '综合';
+}
+
+const title = f.name.replace(/\.[^.]+$/, '').replace(/\.\d+$/, '').replace(/[_\-]+/g, ' ').trim() || f.name;
 
     const item = {
       id: 'w' + id,
       name: f.name,
       title,
+      cat: catOf(title),
       kind: isVideo(f.name) ? 'video' : 'image',
       gif: isGif(f.name),
       url: 'wallpapers/' + rel,

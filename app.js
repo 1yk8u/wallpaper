@@ -16,6 +16,8 @@ let pwdHash = null;       // null => 默认密码 12345678
 let allItems = [];
 let curType = 'all';
 let curQ = '';
+let curCat = 'all';          /* 分类筛选（首开问答后可只显示某一类） */
+const CAT_LIST = ['全部', '二次元', '汽车', '风景', '萌宠', '游戏', '文字', '综合'];
 
 /* =============== 初始化 =============== */
 async function initApp() {
@@ -27,6 +29,7 @@ async function initApp() {
   fillCfgForm();
   refreshSettingsView();
   await loadData();
+  initOnboard();
 }
 
 async function loadPwdHash() {
@@ -80,11 +83,35 @@ function itemDyn(it) { return it.kind === 'video' || it.gif === true; }
 function matchFilter(it) {
   if (curType === 'image' && itemDyn(it)) return false;
   if (curType === 'video' && !itemDyn(it)) return false;
+  if (curCat !== 'all' && (it.cat || '综合') !== curCat) return false;
   if (curQ && !(it.title || '').toLowerCase().includes(curQ)) return false;
   return true;
 }
 
+/* 分类条：按库内实际存在的品类渲染（含计数），第二条筛选维度 */
+function renderCatChips() {
+  const box = $id('cat-filter');
+  if (!box) return;
+  const counts = {};
+  allItems.forEach(it => { const c = it.cat || '综合'; counts[c] = (counts[c] || 0) + 1; });
+  const present = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  if (curCat !== 'all' && !present.includes(curCat)) curCat = 'all';
+  box.hidden = present.length < 2;
+  box.innerHTML = ['全部'].concat(present).map(c => {
+    const on = (c === '全部') ? (curCat === 'all') : (curCat === c);
+    const n = (c === '全部') ? allItems.length : counts[c];
+    return `<button class="chip${on ? ' active' : ''}" data-cat="${escAttr(c)}">${esc(c)} <span class="cnt">(${n})</span></button>`;
+  }).join('');
+  $$('#cat-filter .chip').forEach(ch => ch.addEventListener('click', () => {
+    curCat = ch.dataset.cat === '全部' ? 'all' : ch.dataset.cat;
+    renderAll();
+    if (curCat !== 'all' && counts[curCat] < 8) toast('「' + curCat + '」目前存货还不多，管理员会继续收集', 'warn');
+  }));
+}
+
 function renderAll() {
+  /* 分类条随库重绘 */
+  renderCatChips();
   const seen = {};
   allItems.forEach(it => { if (it.id) seen[it.id] = (seen[it.id] || 0) + 1; });
   const dups = Object.values(seen).some(n => n > 1);
@@ -154,6 +181,51 @@ function openDetail(it) {
     ? 'iPhone 提示：点下载保存图片；视频请在【新窗口打开】后长按 → 存储视频。'
     : '手机可长按图片/视频保存；电脑也可右键另存为。';
   openModal('modal-detail');
+}
+
+/* =============== 首开问答（空盘问你要什么口味） =============== */
+function initOnboard() {
+  try { if (localStorage.getItem('wp-onboarded')) return; } catch (e) { return; }
+  const ob = $id('onboard');
+  if (!ob) return;
+  ob.classList.remove('hidden');
+  const sel = { wall: null, live: null };
+  const paint = (id, key) => {
+    const box = $id(id);
+    box.innerHTML = CAT_LIST.map(c =>
+      `<button class="chip${sel[key] === c ? ' active' : ''}" data-c="${escAttr(c)}">${esc(c)}</button>`).join('');
+    $$('#' + id + ' .chip').forEach(b => b.addEventListener('click', () => {
+      sel[key] = b.dataset.c;
+      paint(id, key);
+    }));
+  };
+  paint('ob-wall', 'wall');
+  paint('ob-live', 'live');
+  const finish = (apply) => {
+    try { localStorage.setItem('wp-onboarded', '1'); } catch (e) {}
+    ob.classList.add('hidden');
+    if (!apply) return;
+    const same = apply.wall === apply.live && apply.wall && apply.wall !== '全部';
+    const any = (apply.wall && apply.wall !== '全部') ? apply.wall
+      : (apply.live && apply.live !== '全部' ? apply.live : null);
+    if (same) {
+      curCat = apply.wall;
+      curType = 'all';
+      syncTypeChips();
+      renderAll();
+      toast('已按你的口味只布展「' + apply.wall + '」，点分类条里的「全部」随时看其他');
+    } else if (any) {
+      curCat = any;
+      renderAll();
+      toast('已优先展示「' + any + '」，其余分类在分类条里随时可逛');
+    }
+  };
+  $id('ob-skip').addEventListener('click', () => finish(null));
+  $id('ob-enter').addEventListener('click', () => finish(sel));
+}
+
+function syncTypeChips() {
+  $$('#type-filter .chip').forEach(c => c.classList.toggle('active', c.dataset.type === curType));
 }
 
 /* =============== UI 事件绑定 =============== */

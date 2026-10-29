@@ -337,3 +337,32 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);transition:background-
   text-align:center;font-family:var(--kai);color:rgba(63,56,42,.5);
   font-size:12.5px;letter-spacing:.18em;padding:26px 14px 36px;
 }
+
+/* ============ 分类筛选条（第二筛选维度） ============ */
+.cat-line{margin-top:9px}
+.cat-line .chip.active{background:var(--moss);border-color:var(--moss);color:#fdfbf2}
+
+/* ============ 首开问答（空盘开屏） ============ */
+#onboard{
+  position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
+  background:rgba(63,56,42,.35);backdrop-filter:blur(3px);padding:16px;
+}
+#onboard .ob-card{
+  max-width:560px;width:100%;background:var(--paper);border:1px solid var(--line);
+  border-radius:14px;padding:26px 24px 20px;
+  box-shadow:0 24px 60px rgba(40,32,16,.35), 0 0 0 6px rgba(251,247,234,.55);
+}
+#onboard .ob-mark{
+  display:inline-block;font-family:var(--kai);font-size:12.5px;letter-spacing:.32em;
+  color:var(--moss-deep);border:1px solid var(--line-deep);border-radius:999px;
+  padding:4px 14px 4px 16px;background:var(--moss-paper);
+}
+#onboard .ob-q{font-family:var(--serif);font-size:23px;color:var(--ink);margin:14px 0 6px}
+#onboard .ob-sub{color:var(--ink-2);font-size:13.5px;margin:0 0 16px}
+#onboard .ob-q2{
+  font-size:12.5px;letter-spacing:.14em;color:var(--dim);
+  border-top:1px dashed var(--line);padding-top:12px;margin:12px 0 7px;
+}
+#onboard .chip-group{flex-wrap:wrap;overflow:visible;margin-bottom:4px}
+#onboard .chip.active{background:var(--moss);border-color:var(--moss);color:#fdfbf2}
+#onboard .ob-foot{display:flex;gap:10px;margin-top:18px}

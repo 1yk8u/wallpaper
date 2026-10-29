@@ -8,11 +8,28 @@
 <meta name="theme-color" content="#e9e2cf">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=20261027">
+<link rel="stylesheet" href="style.css?v=20261029B">
 </head>
 <body>
 
 <div id="toasts" class="toasts"></div>
+
+<!-- 首开问答：空盘问你要什么口味 -->
+<div id="onboard" class="hidden" role="dialog" aria-label="选你的口味">
+  <div class="ob-card">
+    <div class="ob-mark">壁纸标本集</div>
+    <h2 class="ob-q">你喜欢什么样的壁纸？</h2>
+    <p class="ob-sub">挑两个口味，我们按你的偏好布展。进馆之后随时可以换，点分类条里的「全部」就能逛全库。</p>
+    <div class="ob-q2">静态壁纸（图片）</div>
+    <div class="chip-group" id="ob-wall"></div>
+    <div class="ob-q2">动态壁纸（视频）</div>
+    <div class="chip-group" id="ob-live"></div>
+    <div class="ob-foot">
+      <button id="ob-enter" class="btn primary">布展，开始逛</button>
+      <button id="ob-skip" class="btn ghost">先随便逛逛</button>
+    </div>
+  </div>
+</div>
 
 <header class="topbar gx">
   <div class="brand">
@@ -56,6 +73,7 @@
         <button class="chip" data-type="image">静态壁纸 <span class="cnt" id="cnt-image"></span></button>
         <button class="chip" data-type="video">动态壁纸 <span class="cnt" id="cnt-video"></span></button>
       </div>
+      <div class="chip-group cat-line" id="cat-filter" hidden></div>
       <div class="searchwrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.2"/><path d="m15.6 15.6 4 4"/></svg>
         <input id="search" class="search-glass" type="search" placeholder="搜索标题…" autocomplete="off" spellcheck="false">
@@ -252,7 +270,7 @@
 
 <noscript><div class="file-banner">本站需要启用 JavaScript 才能使用。</div></noscript>
 <script src="core.js?v=20261027B"></script>
-<script src="app.js?v=20261029A"></script>
+<script src="app.js?v=20261029B"></script>
 <script src="extractor.js?v=20261029A"></script>
 </body>
 </html>

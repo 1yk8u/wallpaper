@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'wallpapers/**'
+      - 'thumbs/**'
+      - 'scripts/**'
       - 'data/links.json'
   workflow_dispatch:
 

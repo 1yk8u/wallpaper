@@ -655,6 +655,23 @@ async function batchImport() {
 }
 
 /* ---------- 单链接解析主入口 ---------- */
+/* ---------- 自研解析缓存：优先查我们自己的解析历史，命中就秒出 ---------- */
+let KS_CACHE = null, KS_CACHE_TRY = false;
+const ksCacheKey = (u) => String(u || '').trim().toLowerCase()
+  .replace(/^https?:\/\//, '')
+  .replace(/^www\./, '')
+  .split(/[?&#]/)[0]
+  .replace(/\/+$/, '');
+async function ksCacheLookup(url) {
+  try {
+    if (!KS_CACHE && !KS_CACHE_TRY) {
+      KS_CACHE_TRY = true;
+      KS_CACHE = await fetch('data/parse-cache.json?v=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null);
+    }
+    return (KS_CACHE && KS_CACHE.entries && KS_CACHE.entries[ksCacheKey(url)]) || null;
+  } catch (e) { return null; }
+}
+
 async function startExtract() {
   if (exBusy) return;
   const raw = $id('link-input').value;
@@ -702,6 +719,23 @@ async function startExtract() {
     }
     if (plat.key === 'douyin' && /douyin\.com\/user\//i.test(url)) {
       throw new Error('抖音主页批量暂不支持（抖音反爬更严格）。可以逐条粘贴视频/图集链接解析。');
+    }
+    /* 自研缓存先行：此前解析过的快手链接直接出结果，不查第三方通道 */
+    if (plat.key === 'kuaishou') {
+      const ce = await ksCacheLookup(url);
+      if (ce && ce.images && ce.images.length) {
+        const r = { kind: 'images', images: ce.images, title: ce.title || '快手图集', cover: ce.cover || ce.images[0], cached: true };
+        curResult = r;
+        setStatus('命中自有解析缓存，直接出图', 'ok');
+        renderResult(r, { name: '自有缓存' });
+        return;
+      }
+      if (ce && ce.err) {
+        curResult = null;
+        setStatus('这条链接此前解析过：' + ce.err, 'bad');
+        showFailHelp(url);
+        return;
+      }
     }
     statusBusy('识别到 ' + plat.name + '，正在解析…');
     let finalURL = url;

@@ -1,13 +1,11 @@
 'use strict';
 /* =====================================================================
- * app.js —— 画廊渲染 / 详情弹窗 / 设置（管理员）/ GitHub 提交
+ * app.js —— 画廊渲染 / 详情弹窗
  * ===================================================================== */
 
-const ADMIN_CFG_KEY = 'wp_admin_cfg_v1';
-/* 站点内置默认仓库（公开信息，随站点交付；令牌 PAT 仍需本机填写） */
-const SITE_DEFAULTS = { owner: '1yk8u', repo: 'wallpaper', branch: 'main' };
-const UNLOCK_KEY = 'wp_unlocked_v1';
-const DEFAULT_ADMIN_PWD = '12345678';
+/* =====================================================================
+ * SITE_DEFAULTS 已废弃，保持不报错仅作占位，实际均由后端 API 脚本自行读取
+ * ===================================================================== */
 const PWD_SALT = 'wp-site::v1::';
 
 let adminCfg = null;      // {owner, repo, branch, pat}
@@ -278,33 +276,8 @@ function bindUI() {
   ms.addEventListener('click', e => { if (e.target === ms) closeModal('modal-settings'); });
   $id('btn-close-settings').addEventListener('click', () => closeModal('modal-settings'));
   $id('btn-settings').addEventListener('click', () => { refreshSettingsView(); openModal('modal-settings'); });
-  $id('admin-pwd').addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
-  $id('btn-unlock').addEventListener('click', tryUnlock);
-  $id('btn-lock').addEventListener('click', () => {
-    unlocked = false;
-    sessionStorage.removeItem(UNLOCK_KEY);
-    refreshSettingsView();
-    closeModal('modal-settings');
-    toast('已锁定设置');
-  });
-
-  /* 仓库配置 */
-  $id('btn-save-cfg').addEventListener('click', saveCfg);
-  $id('btn-test-cfg').addEventListener('click', testCfg);
-
-  /* 上传 */
-  $id('up-files').addEventListener('change', e => renderUpRows(e.target.files));
-  $id('btn-upload').addEventListener('click', doUpload);
-
-  /* 直链 */
-  $id('btn-add-link').addEventListener('click', addLink);
-
-  /* 管理 */
-  $id('btn-manage').addEventListener('click', renderManage);
-  $id('manage-search').addEventListener('input', renderManage);
-
-  /* 改密码 */
-  $id('btn-chg-pwd').addEventListener('click', changePwd);
+  /* =============== UI 事件绑定 =============== */
+  $id('btn-refresh').addEventListener('click', () => { toast('刷新中…'); loadData(); });
 }
 
 /* =============== 设置：解锁 =============== */

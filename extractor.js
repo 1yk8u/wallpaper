@@ -300,6 +300,7 @@ function renderResult(r, plat) {
        ${r.kind === 'video' ? '' : '<button class="btn ghost" id="ex-dl-one">逐张下载</button>'}
        <button class="btn ghost" id="ex-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 6.5H18V11"/><path d="M18 6.5 11 13.5"/><path d="M9 7H7.5A2.5 2.5 0 0 0 5 9.5v7A2.5 2.5 0 0 0 7.5 19h7a2.5 2.5 0 0 0 2.5-2.5V15"/></svg>新窗口打开</button>
        <button class="btn ghost" id="ex-copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>复制直链</button>
+       <button class="btn primary" id="ex-import">存入壁纸库</button>
      </div>
      <p class="hint">${isIOS
        ? 'iOS 保存技巧：视频中按住画面不放开 → 存储；若下载按钮没反应，用【新窗口打开】后长按视频/图片保存。'
@@ -317,6 +318,28 @@ function renderResult(r, plat) {
   $id('ex-dl-one')  && ($id('ex-dl-one').onclick = () => toast('点图片右上角的 ↓ 按钮逐张下载'));
   $id('ex-open')    && ($id('ex-open').onclick = () => window.open(r.kind === 'video' ? r.play : r.images[0], '_blank', 'noopener'));
   $id('ex-copy')    && ($id('ex-copy').onclick = () => copyText(r.kind === 'video' ? r.play : r.images[0]));
+  $id('ex-import')  && ($id('ex-import').onclick = async () => {
+    if (typeof WPGH === 'undefined' || !WPGH.cfg || !WPGH.cfg.pat || !WPGH.cfg.owner || !WPGH.cfg.repo) {
+      toast('存入壁纸库需要配置 GitHub 仓库信息', 'warn'); return;
+    }
+    try {
+      statusBusy('正在存入壁纸库…');
+      const entries = await resultToEntries(r, plat);
+      statusBusy('内容已抓齐，正在提交到 GitHub 仓库…');
+      const committed = await WPGH.importEntries(entries, {
+        onStatus: (idx, text) => statusBusy('提交 ' + (idx + 1) + '/' + entries.length + ' · ' + text),
+      });
+      committed.forEach(it => { try { allItems.unshift(it); } catch (e) {} });
+      try { renderAll(); } catch (e) {}
+      setStatus('已自动存入壁纸库！线上生效约需 1~2 分钟。已切换到壁纸页，直接下载/长按保存即可。', 'ok');
+      hideResult();
+      const g = document.querySelector('.tab[data-tab="gallery"]'); if (g && !g.classList.contains('active')) g.click();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      toast('已存入壁纸库');
+    } catch (e) {
+      setStatus('自动入库没成功：' + (e.message || e) + '。已切换为手动模式，下面可以直接下载。', 'bad');
+    }
+  });
   box.querySelectorAll('.dl').forEach(b => {
     b.onclick = () => { const u = r.images[Number(b.dataset.dl)]; downloadViaBlob(u, fileTitle(u.split('/').pop() || '') + '.jpg'); toast('↓️ 开始下载…'); };
   });

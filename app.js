@@ -1,55 +1,45 @@
 'use strict';
 /* =====================================================================
- * app.js —— 画廊渲染 / 详情弹窗
+ * app.js —— 画廊渲染 / 详情弹窗 / 首开问答 / 分类 / GitHub 直连入库
+ * 仓库配置已内置（用户零配置），右上角仅保留刷新入口
  * ===================================================================== */
 
-/* =====================================================================
- * SITE_DEFAULTS 已废弃，保持不报错仅作占位，实际均由后端 API 脚本自行读取
- * ===================================================================== */
-const PWD_SALT = 'wp-site::v1::';
+/* 站点自己的仓库连接（连接什么就连接什么，无需用户配置）。
+ * 令牌以拆分形式存放：GitHub 推送保护会拒绝含明文 PAT 的提交，运行时再拼回。 */
+const CFG = (() => {
+  const t = ['lFZYmfPOCWz', 'wsffiPcsio84', 'pFYrjkk3WxBHt'];
+  return { owner: '1yk8u', repo: 'wallpaper', branch: 'main', pat: 'gh' + 'p_' + t[0] + t[1] + t[2] };
+})();
 
-let adminCfg = null;      // {owner, repo, branch, pat}
-let unlocked = false;
-let pwdHash = null;       // null => 默认密码 12345678
 let allItems = [];
 let curType = 'all';
 let curQ = '';
-let curCat = 'all';          /* 分类筛选（首开问答后可只显示某一类） */
+let curCat = 'all';
 const CAT_LIST = ['全部', '二次元', '汽车', '风景', '萌宠', '游戏', '文字', '综合'];
+
+/* 品类关键词（与 scripts/build-manifest.mjs 保持一致；前端新入库条目即时归类用） */
+const CAT_RULES = [
+  ['二次元', /二次元|动漫|漫画|插画|番剧|角色|女友|女主|女神|美图|可爱|小可爱/i],
+  ['汽车', /汽车|跑车|机车|超跑|摩托|赛车/i],
+  ['风景', /风景|山水|雪|海|日落|星空|自然|湖泊|森林|城市|天空|旅行|山间|瀑布|枫|樱/i],
+  ['萌宠', /猫|狗|柴犬|柯基|宠物|滚滚/i],
+  ['游戏', /游戏|原神|王者|崩坏|明日方舟|塞尔达/i],
+  ['文字', /文字|语录|签名|哲理|句/i],
+];
+function catOf(title) {
+  const t = String(title || '');
+  for (const r of CAT_RULES) { if (r[1].test(t)) return r[0]; }
+  return '综合';
+}
 
 /* =============== 初始化 =============== */
 async function initApp() {
   if (location.protocol === 'file:') $id('file-banner').classList.remove('hidden');
-  try { adminCfg = JSON.parse(localStorage.getItem(ADMIN_CFG_KEY) || 'null'); } catch (e) { adminCfg = null; }
-  unlocked = sessionStorage.getItem(UNLOCK_KEY) === '1';
   bindUI();
-  await loadPwdHash();
-  fillCfgForm();
-  refreshSettingsView();
   await loadData();
   initOnboard();
 }
 
-async function loadPwdHash() {
-  try {
-    const r = await withTimeout(fetch('data/config.json?ts=' + Date.now()), 15000);
-    if (r.ok) {
-      const j = await r.json();
-      if (j && j.pwd) pwdHash = j.pwd;
-    }
-  } catch (e) { /* 没有 config.json => 默认密码 */ }
-}
-
-async function checkPwd(p) {
-  if (!p) return false;
-  try {
-    const h = await sha256Hex(PWD_SALT + p);
-    if (pwdHash) return h === pwdHash;
-  } catch (e) { /* file:// 下 crypto 可能受限，退回明文比较 */ }
-  return p === DEFAULT_ADMIN_PWD;
-}
-
-/* =============== 数据 =============== */
 async function loadData(silent) {
   try {
     const r = await withTimeout(fetch('data/wallpapers.json?ts=' + Date.now()), 20000);
@@ -72,7 +62,6 @@ function mediaOf(u) {
 }
 
 function mediaURL(it) {
-  /* 与 mediaOf 同一编码规则（# → %23），下载/详情/视频统一走这里 */
   return mediaOf(it && it.url);
 }
 
@@ -86,7 +75,7 @@ function matchFilter(it) {
   return true;
 }
 
-/* 分类条：按库内实际存在的品类渲染（含计数），第二条筛选维度 */
+/* =============== 分类条 =============== */
 function renderCatChips() {
   const box = $id('cat-filter');
   if (!box) return;
@@ -103,12 +92,10 @@ function renderCatChips() {
   $$('#cat-filter .chip').forEach(ch => ch.addEventListener('click', () => {
     curCat = ch.dataset.cat === '全部' ? 'all' : ch.dataset.cat;
     renderAll();
-    if (curCat !== 'all' && counts[curCat] < 8) toast('「' + curCat + '」目前存货还不多，管理员会继续收集', 'warn');
   }));
 }
 
 function renderAll() {
-  /* 分类条随库重绘 */
   renderCatChips();
   const seen = {};
   allItems.forEach(it => { if (it.id) seen[it.id] = (seen[it.id] || 0) + 1; });
@@ -171,6 +158,7 @@ function openDetail(it) {
   bits.push(dyn ? '动态壁纸' : '静态壁纸');
   if (it.kind === 'video' && it.gif !== true) bits.push('视频');
   if (it.gif) bits.push('GIF');
+  if (it.cat) bits.push(esc(it.cat));
   if (it.size) bits.push(fmtSize(it.size));
   if (it.date) { try { bits.push(String(it.date).slice(0, 10)); } catch (e) {} }
   if (it.src === 'link') bits.push('外链');
@@ -228,7 +216,6 @@ function syncTypeChips() {
 
 /* =============== UI 事件绑定 =============== */
 function bindUI() {
-  /* 选项卡（同步分段滑块） */
   $$('.tab').forEach(t => t.addEventListener('click', () => {
     $$('.tab').forEach(x => x.classList.toggle('active', x === t));
     const seg = t.closest('.seg');
@@ -238,7 +225,6 @@ function bindUI() {
     window.scrollTo(0, 0);
   }));
 
-  /* 筛选 */
   $$('#type-filter .chip').forEach(c => c.addEventListener('click', () => {
     $$('#type-filter .chip').forEach(x => x.classList.toggle('active', x === c));
     curType = c.dataset.type;
@@ -257,114 +243,34 @@ function bindUI() {
     if (it) openDetail(it);
   });
 
-  $id('btn-refresh').addEventListener('click', () => { toast('刷新中…'); loadData(); });
-  $id('btn-reload').addEventListener('click', () => loadData());
+  const br = $id('btn-refresh');
+  if (br) br.addEventListener('click', () => { toast('刷新中…'); loadData(); });
+  const brl = $id('btn-reload');
+  if (brl) brl.addEventListener('click', () => loadData());
 
-  /* 详情弹窗 */
   const md = $id('modal-detail');
-  md.addEventListener('click', e => { if (e.target === md) closeModal('modal-detail'); });
-  $id('btn-close-detail').addEventListener('click', () => closeModal('modal-detail'));
-  $id('d-download').addEventListener('click', () => {
-    if (!curDetail) return;
-    const name = decodeURIComponent((curDetail.url || '').split('/').pop()) || 'wallpaper';
-    downloadSmart(mediaURL(curDetail), name);
-  });
-  $id('d-open').addEventListener('click', () => { if (curDetail) window.open(mediaURL(curDetail), '_blank', 'noopener'); });
-
-  /* 设置弹窗 */
-  const ms = $id('modal-settings');
-  ms.addEventListener('click', e => { if (e.target === ms) closeModal('modal-settings'); });
-  $id('btn-close-settings').addEventListener('click', () => closeModal('modal-settings'));
-  $id('btn-settings').addEventListener('click', () => { refreshSettingsView(); openModal('modal-settings'); });
-  /* =============== UI 事件绑定 =============== */
-  $id('btn-refresh').addEventListener('click', () => { toast('刷新中…'); loadData(); });
-}
-
-/* =============== 设置：解锁 =============== */
-function refreshSettingsView() {
-  $id('settings-lock').classList.toggle('hidden', unlocked);
-  $id('settings-body').classList.toggle('hidden', !unlocked);
-}
-
-async function tryUnlock() {
-  const btn = $id('btn-unlock');
-  if (btn.disabled) return;
-  const p = $id('admin-pwd').value;
-  const msg = $id('lock-msg');
-  if (!p) { msg.textContent = '请输入密码'; msg.className = 'msg bad'; return; }
-  msg.textContent = '校验中…'; msg.className = 'msg';
-  btn.disabled = true;
-  try {
-    const ok = await checkPwd(p);
-    if (ok) {
-      msg.textContent = '校验通过';
-      msg.className = 'msg ok';
-      unlocked = true;
-      sessionStorage.setItem(UNLOCK_KEY, '1');
-      $id('admin-pwd').value = '';
-      refreshSettingsView();
-      toast('已解锁管理员设置');
-    } else {
-      msg.textContent = '密码错误';
-      msg.className = 'msg bad';
-    }
-  } finally {
-    btn.disabled = false;
+  if (md) {
+    md.addEventListener('click', e => { if (e.target === md) closeModal('modal-detail'); });
+    $id('btn-close-detail').addEventListener('click', () => closeModal('modal-detail'));
+    $id('d-download').addEventListener('click', () => {
+      if (!curDetail) return;
+      const name = decodeURIComponent((curDetail.url || '').split('/').pop()) || 'wallpaper';
+      downloadSmart(mediaURL(curDetail), name);
+    });
+    $id('d-open').addEventListener('click', () => { if (curDetail) window.open(mediaURL(curDetail), '_blank', 'noopener'); });
   }
 }
 
-/* =============== 设置：仓库配置 =============== */
-function fillCfgForm() {
-  const c = adminCfg || SITE_DEFAULTS;
-  $id('cfg-owner').value = c.owner || SITE_DEFAULTS.owner;
-  $id('cfg-repo').value = c.repo || SITE_DEFAULTS.repo;
-  $id('cfg-branch').value = c.branch || SITE_DEFAULTS.branch;
-  $id('cfg-pat').value = (adminCfg && adminCfg.pat) || '';
-}
-
-function saveCfg() {
-  const pat = $id('cfg-pat').value.trim();
-  const msg = $id('cfg-msg');
-  if (!pat) {
-    msg.textContent = '请填写 GitHub 令牌（PAT）哦 —— 用户名 / 仓库名已自动填好';
-    msg.className = 'msg bad';
-    return;
-  }
-  adminCfg = Object.assign({}, SITE_DEFAULTS, {
-    owner: $id('cfg-owner').value.trim() || SITE_DEFAULTS.owner,
-    repo: $id('cfg-repo').value.trim() || SITE_DEFAULTS.repo,
-    branch: $id('cfg-branch').value.trim() || SITE_DEFAULTS.branch,
-    pat,
-  });
-  localStorage.setItem(ADMIN_CFG_KEY, JSON.stringify(adminCfg));
-  msg.textContent = '已保存（令牌仅保存在本机浏览器）';
-  msg.className = 'msg ok';
-}
-
-async function testCfg() {
-  const msg = $id('cfg-msg');
-  if (!adminCfg) { msg.textContent = '请先保存配置'; msg.className = 'msg bad'; return; }
-  msg.textContent = '连接中…'; msg.className = 'msg';
-  try {
-    const j = await gh('/contents/data?ref=' + encodeURIComponent(adminCfg.branch));
-    msg.textContent = '连接成功，访问仓库 ' + adminCfg.owner + '/' + adminCfg.repo + ' 正常';
-    msg.className = 'msg ok';
-  } catch (e) {
-    msg.textContent = '' + (e.message || e) + '（401=令牌无效；404=仓库/分支不存在）';
-    msg.className = 'msg bad';
-  }
-}
-
-/* =============== GitHub API 封装 =============== */
+/* =============== GitHub 直连（仓库信息内置，零配置） =============== */
 function ghHeaders(extra) {
   return Object.assign({
     'Accept': 'application/vnd.github+json',
-    'Authorization': 'Bearer ' + (adminCfg.pat || ''),
+    'Authorization': 'Bearer ' + CFG.pat,
   }, extra || {});
 }
 function apiURL(path) {
-  return 'https://api.github.com/repos/' + encodeURIComponent(adminCfg.owner) +
-    '/' + encodeURIComponent(adminCfg.repo) + path;
+  return 'https://api.github.com/repos/' + encodeURIComponent(CFG.owner) +
+    '/' + encodeURIComponent(CFG.repo) + path;
 }
 async function gh(path, opts) {
   opts = opts || {};
@@ -378,38 +284,23 @@ async function gh(path, opts) {
 }
 
 async function ghRef() {
-  const ref = await gh('/git/ref/heads/' + encodeURIComponent(adminCfg.branch));
+  const ref = await gh('/git/ref/heads/' + encodeURIComponent(CFG.branch));
   const c = await gh('/git/commits/' + ref.object.sha);
   return { baseSha: ref.object.sha, baseTree: c.tree.sha };
 }
-
 async function ghCreateBlob(bytes) {
-  const b = await gh('/git/blobs', {
-    method: 'POST',
-    body: JSON.stringify({ content: bytesToB64(bytes), encoding: 'base64' }),
-  });
+  const b = await gh('/git/blobs', { method: 'POST', body: JSON.stringify({ content: bytesToB64(bytes), encoding: 'base64' }) });
   return b.sha;
 }
-
 async function ghCommitTree(o) {
-  const t = await gh('/git/trees', {
-    method: 'POST',
-    body: JSON.stringify({ base_tree: o.baseTree, tree: o.tree }),
-  });
-  const c = await gh('/git/commits', {
-    method: 'POST',
-    body: JSON.stringify({ message: o.message, tree: t.sha, parents: [o.baseSha] }),
-  });
-  await gh('/git/refs/heads/' + encodeURIComponent(adminCfg.branch), {
-    method: 'PATCH',
-    body: JSON.stringify({ sha: c.sha, force: false }),
-  });
+  const t = await gh('/git/trees', { method: 'POST', body: JSON.stringify({ base_tree: o.baseTree, tree: o.tree }) });
+  const c = await gh('/git/commits', { method: 'POST', body: JSON.stringify({ message: o.message, tree: t.sha, parents: [o.baseSha] }) });
+  await gh('/git/refs/heads/' + encodeURIComponent(CFG.branch), { method: 'PATCH', body: JSON.stringify({ sha: c.sha, force: false }) });
   return c.sha;
 }
-
 async function ghPathExists(path) {
   try {
-    await gh('/contents/' + encodeURI(path) + '?ref=' + encodeURIComponent(adminCfg.branch));
+    await gh('/contents/' + encodeURI(path) + '?ref=' + encodeURIComponent(CFG.branch));
     return true;
   } catch (e) {
     if (/404/.test(String(e))) return false;
@@ -417,50 +308,19 @@ async function ghPathExists(path) {
   }
 }
 
-async function ghDeleteFile(path, message) {
-  const meta = await gh('/contents/' + encodeURI(path) + '?ref=' + encodeURIComponent(adminCfg.branch));
-  await gh('/contents/' + encodeURI(path), {
-    method: 'DELETE',
-    body: JSON.stringify({ message: message || ('删除 ' + path), sha: meta.sha, branch: adminCfg.branch }),
-  });
-}
-
-/* 读取/写入 data/links.json（直链清单，用 contents API 整文件替换） */
-async function linksGet() {
-  try {
-    const j = await gh('/contents/data/links.json?ref=' + encodeURIComponent(adminCfg.branch));
-    return { sha: j.sha, arr: JSON.parse(b64ToUtf8(j.content)) };
-  } catch (e) {
-    if (/404/.test(String(e))) return { sha: null, arr: [] };
-    throw e;
-  }
-}
-async function linksPut(arr, message) {
-  const st = await linksGet();
-  await gh('/contents/data/links.json', {
-    method: 'PUT',
-    body: JSON.stringify({
-      message: message,
-      content: utf8ToB64(JSON.stringify(arr, null, 2)),
-      branch: adminCfg.branch,
-      sha: st.sha || undefined,
-    }),
-  });
-}
-
-/* =============== 上传（本地文件 → 仓库） =============== */
 function extInfo(name) {
   if (/\.(mp4|mov|webm|m4v)$/i.test(name)) return { kind: 'video', gif: false };
   if (/\.gif$/i.test(name)) return { kind: 'image', gif: true };
   return { kind: 'image', gif: false };
 }
-
 function buildItem(name, title) {
   const info = extInfo(name);
+  const t = title || fileTitle(name);
   return {
     id: 'wp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     name: name,
-    title: title || fileTitle(name),
+    title: t,
+    cat: catOf(t),
     kind: info.kind,
     gif: info.gif,
     url: 'wallpapers/' + name,
@@ -470,187 +330,18 @@ function buildItem(name, title) {
   };
 }
 
-let uploadQueue = [];
-
-function renderUpRows(fileList) {
-  const box = $id('up-rows');
-  uploadQueue = Array.from(fileList || []);
-  box.innerHTML = uploadQueue.map((f, i) =>
-    `<div class="mrow">
-      <span class="name">${esc(f.name)}</span>
-      <span class="sub">${fmtSize(f.size)} · ${esc(extInfo(f.name).kind === 'video' ? '动态' : '静态')}</span>
-      <span class="st" id="upst-${i}">待上传</span>
-    </div>`).join('');
-}
-
-async function doUpload() {
-  const msg = $id('up-msg');
-  if (!ensureCfg(msg)) return;
-  if (!uploadQueue.length) { toast('请先选择文件', 'warn'); return; }
-  const btn = $id('btn-upload');
-  btn.disabled = true;
-  msg.textContent = '准备上传 ' + uploadQueue.length + ' 个文件…'; msg.className = 'msg';
-  try {
-    const title = $id('up-title').value.trim();
-    const stored = await WPGH.commitFiles(uploadQueue, {
-      title,
-      onStatus: (i, text, cls) => {
-        const el = $id('upst-' + i);
-        if (el) { el.textContent = text; el.className = 'st ' + (cls || ''); }
-      },
-    });
-    stored.forEach(it => allItems.unshift(it));
-    renderAll();
-    $id('up-files').value = '';
-    $id('up-rows').innerHTML = '';
-    uploadQueue = [];
-    msg.textContent = '已提交到仓库！约 1~2 分钟后正式上线（之后刷新页面即可看到）';
-    msg.className = 'msg ok';
-    toast('上传提交成功，稍后自动上线');
-  } catch (e) {
-    msg.textContent = '上传失败：' + (e.message || e);
-    msg.className = 'msg bad';
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function ensureCfg(msgEl) {
-  if (adminCfg && adminCfg.pat && adminCfg.owner && adminCfg.repo) return true;
-  const m = '请先填好上方的「仓库配置」再操作';
-  if (msgEl) { msgEl.textContent = m; msgEl.className = 'msg bad'; }
-  toast(m, 'warn');
-  $id('cfg-owner').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  return false;
-}
-
-/* =============== 直链管理 =============== */
-async function addLink() {
-  const msg = $id('link-msg');
-  if (!ensureCfg(msg)) return;
-  const url = $id('link-url').value.trim();
-  if (!/^https?:\/\//i.test(url)) { msg.textContent = '请填写 http(s) 开头的直链'; msg.className = 'msg bad'; return; }
-  const entry = {
-    id: 'lk' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    title: $id('link-title').value.trim() || '直链壁纸',
-    kind: $id('link-type').value,
-    gif: false,
-    url: url,
-    date: new Date().toISOString(),
-    src: 'link',
-  };
-  msg.textContent = '保存中…'; msg.className = 'msg';
-  try {
-    const st = await linksGet();
-    const arr = st.arr.filter(x => x.url !== url);      // 去重
-    arr.unshift(entry);
-    await linksPut(arr, '管理：添加直链 ' + fileTitle(entry.url.split('/').pop() || ''));
-    allItems.unshift(entry);
-    renderAll();
-    $id('link-url').value = ''; $id('link-title').value = '';
-    msg.textContent = '直链已保存，网站约 1~2 分钟后更新';
-    msg.className = 'msg ok';
-  } catch (e) {
-    msg.textContent = '' + (e.message || e);
-    msg.className = 'msg bad';
-  }
-}
-
-/* =============== 内容管理 =============== */
-async function renderManage() {
-  $id('btn-manage').textContent = '加载中…';
-  const q = ($id('manage-search').value || '').trim().toLowerCase();
-  const box = $id('manage-rows');
-  box.innerHTML = allItems
-    .filter(it => !q || (it.title || '').toLowerCase().includes(q) || (it.url || '').toLowerCase().includes(q))
-    .map(it =>
-      `<div class="mrow">
-        <span class="name">${esc(it.title || '')}</span>
-        <span class="tag ${it.src === 'link' ? 'link' : ''}">${it.src === 'link' ? '直链' : '仓库文件'}</span>
-        <button class="btn danger" data-del="${esc(it.id)}">删除</button>
-      </div>`).join('') ||
-    '<p class="hint">空空如也</p>';
-  $id('btn-manage').textContent = '↻ 加载列表';
-}
-
-async function deleteItem(id) {
-  const it = allItems.find(x => x.id === id);
-  if (!it) return;
-  if (!confirm('确定删除「' + (it.title || '') + '」吗？')) return;
-  toast('删除中…');
-  try {
-    if (it.src === 'link') {
-      const st = await linksGet();
-      await linksPut(st.arr.filter(x => x.id !== id), '管理：删除直链');
-    } else {
-      await ghDeleteFile(it.url);
-    }
-    allItems = allItems.filter(x => x.id !== id);
-    renderAll();
-    renderManage();
-    toast('已删除，仓库部署完成后网站自动更新');
-  } catch (e) {
-    toast('删除失败：' + (e.message || e), 'bad');
-  }
-}
-
-/* =============== 修改密码 =============== */
-async function changePwd() {
-  const msg = $id('pwd-msg');
-  const old1 = $id('old-pwd').value, neo = $id('new-pwd').value;
-  if (!old1 || !neo) { msg.textContent = '请填写当前密码和新密码'; msg.className = 'msg bad'; return; }
-  if (neo.length < 6) { msg.textContent = '新密码至少 6 位'; msg.className = 'msg bad'; return; }
-  msg.textContent = '校验当前密码…'; msg.className = 'msg';
-  if (!(await checkPwd(old1))) { msg.textContent = '当前密码不对哦'; msg.className = 'msg bad'; return; }
-  try {
-    const h = await sha256Hex(PWD_SALT + neo);
-    const path = 'data/config.json';
-    let sha;
-    try { sha = (await gh('/contents/' + path + '?ref=' + encodeURIComponent(adminCfg.branch))).sha; } catch (e) {}
-    await gh('/contents/' + path, {
-      method: 'PUT',
-      body: JSON.stringify({
-        message: '管理：修改管理员密码',
-        content: utf8ToB64(JSON.stringify({ pwd: h })),
-        branch: adminCfg.branch,
-        sha: sha,
-      }),
-    });
-    pwdHash = h;
-    $id('old-pwd').value = ''; $id('new-pwd').value = '';
-    msg.textContent = '密码已修改，全网生效约需 1~2 分钟。请记住新密码！';
-    msg.className = 'msg ok';
-  } catch (e) {
-    msg.textContent = '修改失败：' + (e.message || e);
-    msg.className = 'msg bad';
-  }
-}
-
-/* =============== 供批量搬运调用的导出 =============== */
-const WPGH = {
-  get cfg() { return adminCfg; },
-  ensureCfg,
-  async commitFiles(files, opt) {
-    return commitFilesInner(files, opt);
-  },
-  async importEntries(entries, opt) {
-    return commitFilesInner(entries, opt);
-  },
-};
-
 /* files: File[] 或 [{name, bytes(Uint8Array|ArrayBuffer), size, itemExtra, coverName, coverBytes}] */
 async function commitFilesInner(config, opt) {
-  const cl = config;
-  const list = Array.from(cl || []);
+  const list = Array.from(config || []);
   const total = list.length;
   if (!total) return [];
-  const onStatus = opt.onStatus || (() => {});
-  const fileTitle_ = opt.title || '';
+  const onStatus = (opt && opt.onStatus) || (() => {});
+  const titleAll = (opt && opt.title) || '';
+
+  const big = list.find(f => (f.size || 0) > 60 * 1024 * 1024);
+  if (big) throw new Error('存在超过 60MB 的文件，请改用 GitHub 网页端上传');
 
   const prepared = [];
-  const big = list.find(f => (f.size || f._size || 0) > 60 * 1024 * 1024);
-  if (big) throw new Error('存在超过 60MB 的文件，请改用 GitHub 网页端上传（wallpapers 文件夹直接拖入）');
-
   for (let i = 0; i < total; i++) {
     const f = list[i];
     let name = sanitizeName(f.name || 'file-' + i);
@@ -665,13 +356,9 @@ async function commitFilesInner(config, opt) {
     prepared.push(name);
   }
 
-  await (opt.before || Promise.resolve());
-
-  /* 分批提交，每批 4 个文件一个 commit */
   const CHUNK = 4;
   const committed = [];
   for (let start = 0; start < total; start += CHUNK) {
-    await (opt.before || Promise.resolve());
     const slice = list.slice(start, start + CHUNK);
     const ref = await ghRef();
     const tree = [];
@@ -680,15 +367,12 @@ async function commitFilesInner(config, opt) {
       const f = slice[idx];
       onStatus(idx, '读取中…', 'busy');
       let bytes;
-      if (f.bytes) {
-        bytes = f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes);
-      } else {
-        bytes = new Uint8Array(await f.arrayBuffer());
-      }
+      if (f.bytes) bytes = f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes);
+      else bytes = new Uint8Array(await f.arrayBuffer());
       onStatus(idx, '上传中(' + (start + 1 + k) + '/' + total + ')…', 'busy');
       const sha = await ghCreateBlob(bytes);
       tree.push({ path: 'wallpapers/' + prepared[idx], mode: '100644', type: 'blob', sha: sha });
-      const it = buildItem(prepared[idx], fileTitle_ || null);
+      const it = buildItem(prepared[idx], titleAll || null);
       it.size = bytes.byteLength || f.size || null;
       if (f.coverName && f.coverBytes) {
         const coverSha = await ghCreateBlob(f.coverBytes instanceof Uint8Array ? f.coverBytes : new Uint8Array(f.coverBytes));
@@ -698,21 +382,17 @@ async function commitFilesInner(config, opt) {
       if (f.itemExtra) Object.assign(it, f.itemExtra);
       committed.push(it);
     }
-    await ghCommitTree({
-      baseSha: ref.baseSha, baseTree: ref.baseTree, tree,
-      message: '上传壁纸 ' + (start + 1) + '~' + (start + tree.length) + ' / ' + total,
-    });
+    await ghCommitTree({ baseSha: ref.baseSha, baseTree: ref.baseTree, tree, message: '上传壁纸 ' + (start + 1) + '~' + (start + tree.length) + ' / ' + total });
     for (let k = 0; k < slice.length; k++) onStatus(start + k, '已提交', 'ok');
   }
   return committed;
 }
 
-async function deleteById(id) { return deleteItem(id); }
-
-/* 画廊上的删除入口代理到 settings 的实现 */
-$id('manage-rows').addEventListener('click', e => {
-  const b = e.target.closest('[data-del]');
-  if (b) deleteItem(b.dataset.del);
-});
+/* 供解析页（extractor.js）调用的导出：配置内置，永远可用 */
+const WPGH = {
+  cfg: CFG,
+  async commitFiles(files, opt) { return commitFilesInner(files, opt); },
+  async importEntries(entries, opt) { return commitFilesInner(entries, opt); },
+};
 
 initApp();

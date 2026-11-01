@@ -366,3 +366,80 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);transition:background-
 #onboard .chip-group{flex-wrap:wrap;overflow:visible;margin-bottom:4px}
 #onboard .chip.active{background:var(--moss);border-color:var(--moss);color:#fdfbf2}
 #onboard .ob-foot{display:flex;gap:10px;margin-top:18px}
+
+/* ================================================================
+ * 液态玻璃质感 · Liquid Glass（iOS 26 风）
+ * 只作用于"面层"组件：顶栏 / 标签切换 / 筛选纸标签 / 弹窗卡 / 问答卡。
+ * 网格内大量卡片一律不加 backdrop-filter，保障滚动流畅。
+ * ================================================================ */
+.topbar,
+.tabs .seg,
+#onboard .ob-card,
+.modal-card{
+  position:relative;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.42) 0%, rgba(255,255,255,.14) 34%, rgba(63,56,42,.03) 58%, rgba(255,255,255,.26) 100%),
+    rgba(251,247,234,.55);
+  -webkit-backdrop-filter:blur(18px) saturate(1.7);
+  backdrop-filter:blur(18px) saturate(1.7);
+  border:1px solid rgba(255,255,255,.5);
+  box-shadow:
+    inset 0 1px 1px rgba(255,255,255,.65),
+    inset 0 -1px 1px rgba(63,56,42,.05),
+    inset 0 0 16px rgba(255,255,255,.22),
+    0 8px 26px rgba(63,56,42,.16),
+    0 2px 7px rgba(63,56,42,.07);
+}
+/* 顶栏玻璃：底部收圆角，像一片浮起的玻璃 */
+.topbar{border-radius:0 0 18px 18px;border-top:none;box-shadow:
+  inset 0 1px 1px rgba(255,255,255,.65),
+  inset 0 -1px 1px rgba(63,56,42,.06),
+  inset 0 0 16px rgba(255,255,255,.22),
+  0 10px 30px rgba(63,56,42,.18),
+  0 2px 8px rgba(63,56,42,.08)}
+
+/* 玻璃折射亮带（斜向高光，随光线感） */
+.topbar::after,
+.tabs .seg::after,
+#onboard .ob-card::after,
+.modal-card::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(105deg, transparent 32%, rgba(255,255,255,.30) 45%, rgba(255,255,255,.06) 53%, transparent 68%);
+}
+
+/* 标签切换 → iOS 玻璃分段控件 */
+.tabs{background:none;border-bottom:none;padding:12px 20px 16px}
+.tabs .seg{
+  gap:4px;padding:4px;border-radius:17px;overflow:visible;
+  background:rgba(251,247,234,.5);
+}
+.tabs .seg .seg-thumb{display:none}
+.tabs .seg [role=tab]{padding:9px 14px;border-radius:13px}
+.tabs .seg [role=tab]+[role=tab]{border-left:none}
+.tabs .seg [role=tab].active{
+  background:linear-gradient(115deg, rgba(255,255,255,.66), rgba(255,255,255,.34) 58%, rgba(255,255,255,.5));
+  color:var(--ink);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.85), inset 0 0 10px rgba(255,255,255,.25), 0 2px 7px rgba(63,56,42,.13);
+}
+
+/* 纸标签 → 玻璃片（激活态保持苔绿实底，不参与玻璃） */
+.chip:not(.active){
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.52), rgba(255,255,255,.2) 52%, rgba(255,255,255,.36) 100%),
+    rgba(251,247,234,.45);
+  -webkit-backdrop-filter:blur(10px) saturate(1.5);
+  backdrop-filter:blur(10px) saturate(1.5);
+  border:1px solid rgba(255,255,255,.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.7),
+    inset 0 -1px 0 rgba(63,56,42,.06),
+    0 2px 8px rgba(63,56,42,.10);
+}
+.chip:not(.active):hover{border-color:rgba(255,255,255,.85)}
+
+/* 弹窗卡变玻璃书页（圆角放大） */
+.modal-card{
+  border-radius:18px;
+  border-top:3px solid rgba(92,122,68,.55);
+}
+#onboard .ob-card{border-radius:20px;overflow:hidden}

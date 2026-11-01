@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#e9e2cf">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=20261029B">
+<link rel="stylesheet" href="style.css?v=20261101A">
 </head>
 <body>
 
@@ -170,104 +170,9 @@
   </div>
 </div>
 
-<!-- ================= 设置弹窗 ================= -->
-<div id="modal-settings" class="modal hidden">
-  <div class="modal-card">
-    <div class="modal-head">
-      <h3>设置</h3>
-      <button class="icon-btn" id="btn-close-settings" aria-label="关闭">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
-      </button>
-    </div>
-
-    <div id="settings-lock">
-      <p class="hint">此区域仅管理员使用，请输入管理员密码：</p>
-      <div class="row">
-        <input id="admin-pwd" type="password" placeholder="管理员密码" autocomplete="current-password" style="flex:1">
-        <button id="btn-unlock" class="btn primary">解锁</button>
-      </div>
-      <p class="msg" id="lock-msg"></p>
-    </div>
-
-    <div id="settings-body" class="hidden">
-      <!-- 仓库配置 -->
-      <div class="sec">
-        <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 8.2 12 4l8 4.2v7.6L12 16l-8-4.2z"/><path d="M4 8.2 12 12.4l8-4.2M12 12.4V20"/></svg>仓库配置（首次使用必填）</h4>
-        <div class="row"><input id="cfg-owner" placeholder="GitHub 用户名"><input id="cfg-repo" placeholder="仓库名，如 wallpaper"></div>
-        <div class="row"><input id="cfg-branch" placeholder="分支，默认 main"><input id="cfg-pat" type="password" placeholder="GitHub 令牌 PAT（只保存在本机）"></div>
-        <div class="row">
-          <button id="btn-save-cfg" class="btn primary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>保存配置
-          </button>
-          <button id="btn-test-cfg" class="btn ghost">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12H8l2.5-6 3 12 2.5-6h4.5"/></svg>测试连接
-          </button>
-        </div>
-        <p class="msg" id="cfg-msg"></p>
-        <p class="hint">用户名 / 仓库名 / 分支已自动填好，你只需要在上面粘贴 GitHub 令牌（PAT）。令牌获取：GitHub → Settings → Developer settings → Personal access tokens → 新建（勾选 repo 权限），或 Fine-grained 仅选中本仓库、权限 Contents 为 Read and write。</p>
-      </div>
-
-      <!-- 上传壁纸 -->
-      <div class="sec">
-        <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a4.3 4.3 0 1 1 .7-8.6A6 6 0 0 1 19 9.6 3.7 3.7 0 0 1 18 16.6z"/><path d="M12 11v6"/><path d="m9.5 13.5 2.5-2.5 2.5 2.5"/></svg>上传壁纸 / 动态壁纸</h4>
-        <input id="up-title" placeholder="标题（留空则用文件名）" style="width:100%">
-        <div class="row"><input id="up-files" type="file" multiple accept="image/*,video/*,.mp4,.mov,.webm,.gif" style="width:100%"></div>
-        <div id="up-rows" class="up-rows"></div>
-        <button id="btn-upload" class="btn primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V9"/><path d="m7.5 13.5 4.5-4.5 4.5 4.5"/><path d="M5 5h14"/></svg>
-          上传到仓库
-        </button>
-        <p class="msg" id="up-msg"></p>
-        <p class="hint">图片 jpg/png/webp/gif、视频 mp4/mov/webm 均可，GIF 归入动态壁纸。单个建议 ≤50MB，更大请往 GitHub 网页的 wallpapers 文件夹直接拖文件。</p>
-      </div>
-
-      <!-- 添加直链 -->
-      <div class="sec">
-        <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>添加直链（不占仓库空间）</h4>
-        <div class="row"><input id="link-url" placeholder="图片/视频的完整直链 https://…" style="flex:1"></div>
-        <div class="row">
-          <input id="link-title" placeholder="标题" style="flex:1">
-          <select id="link-type"><option value="image">静态壁纸</option><option value="video">动态壁纸</option></select>
-        </div>
-        <button id="btn-add-link" class="btn primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>保存直链
-        </button>
-        <p class="msg" id="link-msg"></p>
-      </div>
-
-      <!-- 内容管理 -->
-      <div class="sec">
-        <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4.6" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4.6" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.6" cy="18" r="1" fill="currentColor" stroke="none"/></svg>内容管理（删除）</h4>
-        <div class="row">
-          <button id="btn-manage" class="btn ghost">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>加载列表
-          </button>
-          <input id="manage-search" placeholder="筛选…" style="flex:1">
-        </div>
-        <div id="manage-rows" class="manage-rows"></div>
-        <p class="msg" id="manage-msg"></p>
-      </div>
-
-      <!-- 修改密码 -->
-      <div class="sec">
-        <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="3.4"/><path d="M11.4 12H20M17 12v3.2M20 12v2.4"/></svg>修改管理员密码</h4>
-        <div class="row"><input id="old-pwd" type="password" placeholder="当前密码" style="flex:1"></div>
-        <div class="row"><input id="new-pwd" type="password" placeholder="新密码（至少6位）" style="flex:1"></div>
-        <button id="btn-chg-pwd" class="btn primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>保存新密码
-        </button>
-        <p class="msg" id="pwd-msg"></p>
-      </div>
-
-      <div class="row"><button id="btn-lock" class="btn ghost">🔒 锁定设置</button></div>
-      <p class="hint">GitHub 令牌只保存在本机浏览器，不会上传；换设备或清除浏览器数据后需重新填写。</p>
-    </div>
-  </div>
-</div>
-
 <noscript><div class="file-banner">本站需要启用 JavaScript 才能使用。</div></noscript>
 <script src="core.js?v=20261027B"></script>
-<script src="app.js?v=20261029B"></script>
-<script src="extractor.js?v=20261029A"></script>
+<script src="app.js?v=20261101A"></script>
+<script src="extractor.js?v=20261101A"></script>
 </body>
 </html>

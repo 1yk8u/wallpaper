@@ -615,8 +615,8 @@ async function batchDownload() {
 
 async function batchImport() {
   if (batchBusy) return;
-  if (!WPGH.ensureCfg($id('ex-status'))) {
-    setStatus('「搬运到壁纸库」需要管理员：设置 → 输入密码 12345678 → 仓库配置里粘贴一次 GitHub 令牌（用户名/仓库名已自动填好）', 'bad');
+  if (typeof WPGH === 'undefined' || !WPGH.cfg) {
+    setStatus('壁纸库连接不可用：页面脚本未加载完整，请刷新后重试', 'bad');
     return;
   }
   const list = batchItems.map((it, i) => ({ it, i })).filter(x => batchSel.has(x.it.photoId));
@@ -771,7 +771,7 @@ async function startExtract() {
     const r = await plat.parse(finalURL, plat);
     curResult = r;
     renderResult(r, plat);
-    autoImportAfterParse(r, plat); /* 后台自动入库，不阻塞界面 */
+    /* 入库改为结果页按钮「存入壁纸库」显式操作，不再自动上传 */
   } catch (e) {
     curResult = null;
     setStatus('解析失败：' + (e.message || e), 'bad');

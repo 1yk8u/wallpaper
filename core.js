@@ -68,6 +68,25 @@ function pxPenalize(label, ms) {
 }
 function pxRank(label) { const t = pxState()[label]; return (typeof t === 'number' && t < Date.now()) ? 1 : 0; }
 
+/* 通道拉黑（本机自动删除）：连续 2 次真实解析失败 → 本机禁用 24 小时，
+ * 等效于「把不能用的通道删掉」，期满自动重生，成功即清零。仅影响本设备。 */
+const BANKEY = 'wp_px_ban_v1';
+function pxBanState() { try { return JSON.parse(localStorage.getItem(BANKEY) || '{}'); } catch (e) { return {}; } }
+function pxSaveBan(s) { try { localStorage.setItem(BANKEY, JSON.stringify(s)); } catch (e) {} }
+function pxIsBanned(label) { const e = pxBanState()[label]; return !!(e && e.banUntil > Date.now()); }
+function pxMarkFail(label) {
+  const s = pxBanState();
+  const e = s[label] || { strikes: 0, banUntil: 0 };
+  e.strikes = (typeof e.strikes === 'number' ? e.strikes : 0) + 1;
+  if (e.strikes >= 2) { e.banUntil = Date.now() + 864e5; e.strikes = 0; }
+  s[label] = e;
+  pxSaveBan(s);
+}
+function pxMarkOk(label) {
+  const s = pxBanState();
+  if (s[label]) { delete s[label]; pxSaveBan(s); }
+}
+
 /* 通道速度档案：recordRTT 记录每次真实成功耗时；30 分钟内有效。
  * 解析页打开时会先行「打探」一轮测速（probeChannels），最快通道直接梦开始。 */
 const RTTKEY = 'wp_px_rtt_v1';
@@ -118,12 +137,15 @@ async function probeChannels(chans, opt) {
 }
 
 /* 滚动双车道竞速：任何一条成功「瞬间」全局返回，绝不陪跑慢通道；
- * 车道数 = wave（默认 2），一条落地立即补发下一条，失败通道进冷却队列。 */
+ * 车道数 = wave（默认 2），一条落地立即补发下一条，失败通道进冷却队列。
+ * 被拉黑的通道（连续两败）不参与发射；全员拉黑时兜底解禁防锁死。 */
 async function raceFetch(chans, url, opt) {
   opt = opt || {};
   const ms = opt.ms || 20000;
   const cap = Math.max(1, opt.wave || 2);
-  const list = orderedChannels(chans.filter(c => (opt.binary ? !c.textOnly : true)));
+  const pool = chans.filter(c => (opt.binary ? !c.textOnly : true));
+  let list = orderedChannels(pool.filter(c => !pxIsBanned(c.label)));
+  if (!list.length) list = orderedChannels(pool); /* 全被拉黑：解禁再赌一次 */
   if (!list.length) throw new Error('没有可用通道');
   const errs = [];
   return await new Promise((resolve, reject) => {
@@ -148,9 +170,11 @@ async function raceFetch(chans, url, opt) {
             else resp = await withTimeout(fetch(c.mk(url)), ms, c.label + ' 超时');
             if (!resp || !resp.ok) throw new Error(c.label + ' HTTP ' + (resp ? resp.status : '网络错误'));
             recordRTT(c.label, performance.now() - t0);
+            pxMarkOk(c.label);
             finish({ c, resp });
           } catch (e) {
             pxPenalize(c.label);
+            pxMarkFail(c.label);
             errs.push((e && e.message) || String(e));
           } finally {
             inFlight--;

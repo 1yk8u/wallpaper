@@ -465,19 +465,41 @@ async function ksFetchProfilePage(userId, pcursor) {
     query: KUAISHOU_QUERY,
   };
   const errs = [];
-  for (const p of POST_PROXIES) {
+  const chans = POST_PROXIES.filter(p => !pxIsBanned(p.label));
+  for (const p of chans) {
     try {
       const r = await withTimeout(fetch(p.mk('https://www.kuaishou.com/graphql'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      }), 25000);
+      }), 15000);
       if (r.ok) {
         const j = await r.json();
-        if (j && !j.errors && j.data && j.data.visionProfilePhotoList) return j.data.visionProfilePhotoList;
+        if (j && !j.errors && j.data && j.data.visionProfilePhotoList) {
+          pxMarkOk(p.label);
+          return j.data.visionProfilePhotoList;
+        }
         errs.push(p.label + ':' + ((j.errors && j.errors[0] && j.errors[0].message) || '异常'));
       } else errs.push(p.label + ':HTTP' + r.status);
-    } catch (e) { errs.push(p.label + ':' + (e.message || e)); }
+      pxMarkFail(p.label);
+    } catch (e) { errs.push(p.label + ':' + (e.message || e)); pxMarkFail(p.label); }
+  }
+  /* 通道全被拉黑的兜底：原序再试一轮 */
+  if (!chans.length) {
+    for (const p of POST_PROXIES) {
+      try {
+        const r = await withTimeout(fetch(p.mk('https://www.kuaishou.com/graphql'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }), 15000);
+        if (r.ok) {
+          const j = await r.json();
+          if (j && !j.errors && j.data && j.data.visionProfilePhotoList) return j.data.visionProfilePhotoList;
+          errs.push(p.label + ':' + ((j.errors && j.errors[0] && j.errors[0].message) || '异常'));
+        } else errs.push(p.label + ':HTTP' + r.status);
+      } catch (e) { errs.push(p.label + ':' + (e.message || e)); }
+    }
   }
   throw new Error('GraphQL 通道失败（' + errs.slice(0, 2).join('；') + '）');
 }

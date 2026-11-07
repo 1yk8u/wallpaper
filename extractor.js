@@ -816,6 +816,25 @@ async function startExtract() {
       }
     }
 
+    /* 1.7) 浏览器端自研引擎：自己抓页面自己剥 JSON 自己挖直链，不经过任何第三方解析接口 */
+    if (plat && !isProfile) {
+      statusBusy('自研引擎 · 浏览器端解析中…');
+      try {
+        const r = await withTimeout(ownBrowserParse(url, plat), 60000, '浏览器端解析超时');
+        if (r && (r.play || (r.images && r.images.length))) {
+          curResult = r;
+          renderResult(r, { name: '自研引擎' });
+          memoSet(url, r);
+          setStatus('✅ 自研引擎解析完成（' + (r.via || '浏览器端') + '）· 结果已缓存，下次秒出', 'ok');
+          return;
+        }
+        statusBusy('浏览器端没抓到这条（平台可能需要登录态），继续后续通道…');
+      } catch (e) {
+        statusBusy('浏览器端没抓到（' + String((e && e.message) || e) + '），继续后续通道…');
+      }
+      await sleep(400);
+    }
+
     /* 2) 立刻派单给仓库里的自研引擎（后台跑，不阻塞下面的快速通道） */
     const since = Date.now() - 60000;
     let dispatchErr = '';
@@ -1039,8 +1058,8 @@ function showOwnResult(r, src) {
 
 /* ---------- UI 绑定 ---------- */
 const EX_HINTS = {
-  single: '自家解析引擎支持：抖音 · 快手 · 哔哩哔哩 · 小红书（长链短链都行）。首次解析约 1~3 分钟，结果会永久缓存，之后秒出',
-  batch: '批量搬运：粘贴快手个人主页链接（kuaishou.com/profile/xxx），自家引擎抓取该账号作品，可勾选下载或搬运入库',
+  single: '自研解析引擎：粘贴后先由浏览器端引擎即时解析（秒级，自己抓页面自己解析），不行再自动派单仓库引擎代抓（1~3 分钟，结果永久缓存）',
+  batch: '批量搬运：粘贴快手个人主页链接（kuaishou.com/profile/xxx），自研引擎抓取该账号作品，可勾选下载或搬运入库',
 };
 
 function setExMode(mode) {

@@ -293,6 +293,8 @@ async function ownBrowserParse(url, plat) {
   return r;
 }
 
-/* 供测试与调试 */
+/* 供测试与调试；并暴露失败记忆清除口（重置通道按钮用） */
+function opResetMemo() { OP_OK_MEMO && Object.keys(OP_OK_MEMO).forEach(k => delete OP_OK_MEMO[k]); OP_ERR_MEMO && Object.keys(OP_ERR_MEMO).forEach(k => delete OP_ERR_MEMO[k]); }
 globalThis.ownBrowserParse = ownBrowserParse;
+globalThis.opResetMemo = opResetMemo;
 globalThis.__opInternals = { opStates, opBalanced, opFetchPage, opUnescape, opVideoURLs, opImgURLs, adapters: OP_ADAPTERS };

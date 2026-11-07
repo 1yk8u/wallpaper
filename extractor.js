@@ -286,10 +286,11 @@ function showFailHelp(url) {
   $id('fail-own').onclick = () => { hideResult(); startExtract(); };
   $id('fail-reset').onclick = () => {
     try {
-      ['wp_px_ban_v1', 'wp_px_state_v1', 'wp_px_rtt_v1'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+      ['wp_px_ban_v1', 'wp_px_state_v1', 'wp_px_rtt_v1', PLAT_CD_KEY].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+      OP_ERR_RESET && OP_ERR_RESET();
       probeChannels(PROXY_TEXT);
       probeChannels(POST_PROXIES);
-      toast('通道记录已重置，正在重新打探测速…', 'ok');
+      toast('已重置冷却与通道记录，正在重新探测…', 'ok');
     } catch (e) { toast('重置失败：' + (e.message || e), 'warn'); }
   };
 }
@@ -754,6 +755,7 @@ function memoSet(url, data) {
 }
 
 /* ---------- 防拉黑：平台连续失败自动冷却，绝不反复硬砸触发风控 ---------- */
+const OP_ERR_RESET = () => { try { if (typeof opResetMemo === 'function') opResetMemo(); } catch (e) { /* ignore */ } };
 const PLAT_CD_KEY = 'wp_plat_cooldown_v1';
 function platCDLoad() { try { return JSON.parse(localStorage.getItem(PLAT_CD_KEY) || '{}'); } catch (e) { return {}; } }
 function platCDSave(d) { try { localStorage.setItem(PLAT_CD_KEY, JSON.stringify(d)); } catch (e) { /* ignore */ } }

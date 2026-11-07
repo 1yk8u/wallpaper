@@ -68,37 +68,101 @@ function pxPenalize(label, ms) {
 }
 function pxRank(label) { const t = pxState()[label]; return (typeof t === 'number' && t < Date.now()) ? 1 : 0; }
 
-function orderedChannels(chans) {
-  return chans.slice().sort((a, b) => pxRank(a.label) - pxRank(b.label));
+/* 通道速度档案：recordRTT 记录每次真实成功耗时；30 分钟内有效。
+ * 解析页打开时会先行「打探」一轮测速（probeChannels），最快通道直接梦开始。 */
+const RTTKEY = 'wp_px_rtt_v1';
+function pxRTT() { try { return JSON.parse(localStorage.getItem(RTTKEY) || '{}'); } catch (e) { return {}; } }
+function recordRTT(label, ms) {
+  if (typeof label !== 'string' || !(ms > 0) || ms > 30000) return;
+  const t = pxRTT();
+  const old = t[label];
+  if (old && old.at && Date.now() - old.at < 18e5 && old.ms <= ms) return; /* 30 分钟内保留最好成绩 */
+  t[label] = { ms: Math.round(ms), at: Date.now() };
+  try { localStorage.setItem(RTTKEY, JSON.stringify(t)); } catch (e) {}
+}
+function rttOf(label) {
+  const e = pxRTT()[label];
+  return (e && e.at && Date.now() - e.at < 18e5) ? e.ms : null;
 }
 
-/* 并发竞速：每轮把 wave 条通道一起发射，任何一条成功立即返回 */
+/* 通道排序：被惩罚的垫底 → 有测速记录的速度优先 → 没记录的殿后 */
+function orderedChannels(chans) {
+  return chans.slice().sort((a, b) => {
+    const pr = pxRank(a.label) - pxRank(b.label);
+    if (pr) return pr;
+    const ra = rttOf(a.label), rb = rttOf(b.label);
+    if (ra == null && rb == null) return 0;
+    if (ra == null) return 1;
+    if (rb == null) return -1;
+    return ra - rb;
+  });
+}
+
+/* 打探一轮：给每条通道发个极小请求测延迟，成功记 RTT，失败轻惩罚 3 分钟 */
+const PROBE_TARGET = 'https://www.baidu.com/favicon.ico';
+let probeBusy = false;
+async function probeChannels(chans, opt) {
+  opt = opt || {};
+  if (probeBusy) return;
+  probeBusy = true;
+  const ms = opt.ms || 5500;
+  try {
+    await Promise.allSettled(chans.filter(c => c.mk && !c.wrap).map(async (c) => {
+      const t0 = performance.now();
+      try {
+        const r = await withTimeout(fetch(c.mk(PROBE_TARGET)), ms, c.label + ' 探测超时');
+        if (r) recordRTT(c.label, performance.now() - t0);
+      } catch (e) { pxPenalize(c.label, 18e4); }
+    }));
+  } finally { probeBusy = false; }
+}
+
+/* 滚动双车道竞速：任何一条成功「瞬间」全局返回，绝不陪跑慢通道；
+ * 车道数 = wave（默认 2），一条落地立即补发下一条，失败通道进冷却队列。 */
 async function raceFetch(chans, url, opt) {
   opt = opt || {};
   const ms = opt.ms || 20000;
-  const wave = Math.max(1, opt.wave || 2);
-  let list = orderedChannels(chans.filter(c => (opt.binary ? !c.textOnly : true)));
+  const cap = Math.max(1, opt.wave || 2);
+  const list = orderedChannels(chans.filter(c => (opt.binary ? !c.textOnly : true)));
+  if (!list.length) throw new Error('没有可用通道');
   const errs = [];
-  while (list.length) {
-    const group = list.splice(0, wave);
-    const settled = await Promise.allSettled(group.map(async (c) => {
-      let resp;
-      if (c.wrap) resp = await withTimeout(c.wrap(url), ms, c.label + ' 超时');
-      else resp = await withTimeout(fetch(c.mk(url)), ms, c.label + ' 超时');
-      if (!resp || !resp.ok) throw new Error(c.label + ' HTTP ' + (resp ? resp.status : '网络错误'));
-      return { c, resp };
-    }));
-    let got = null;
-    settled.forEach((s, i) => {
-      if (s.status === 'fulfilled') { if (!got) got = s.value; }
-      else {
-        errs.push((s.reason && s.reason.message) || String(s.reason));
-        pxPenalize(group[i].label);
+  return await new Promise((resolve, reject) => {
+    let next = 0, inFlight = 0, done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const failIfDrained = () => {
+      if (!done && next >= list.length && inFlight === 0) {
+        done = true;
+        reject(new Error('全部通道失败（' + errs.slice(0, 3).join('；') + '）'));
       }
-    });
-    if (got) return got;
-  }
-  throw new Error('全部通道失败（' + errs.slice(0, 3).join('；') + '）');
+    };
+    const launch = () => {
+      if (done) return;
+      while (inFlight < cap && next < list.length) {
+        const c = list[next++];
+        inFlight++;
+        (async () => {
+          const t0 = performance.now();
+          try {
+            let resp;
+            if (c.wrap) resp = await withTimeout(c.wrap(url), ms, c.label + ' 超时');
+            else resp = await withTimeout(fetch(c.mk(url)), ms, c.label + ' 超时');
+            if (!resp || !resp.ok) throw new Error(c.label + ' HTTP ' + (resp ? resp.status : '网络错误'));
+            recordRTT(c.label, performance.now() - t0);
+            finish({ c, resp });
+          } catch (e) {
+            pxPenalize(c.label);
+            errs.push((e && e.message) || String(e));
+          } finally {
+            inFlight--;
+            if (!done) launch();
+            failIfDrained();
+          }
+        })();
+      }
+      failIfDrained();
+    };
+    launch();
+  });
 }
 
 async function fetchTextSmart(url, opt) {
@@ -177,13 +241,15 @@ function extractURL(text) {
 }
 
 async function resolveRedirect(url) {
+  /* 短链还原只给 6 秒：快速失败不致命，
+   * 后续解析会经代理直接抓短链页面（服务端跳转后返回真实内容）。 */
   try {
-    const r = await withTimeout(fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url)), 20000);
+    const r = await withTimeout(fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url)), 6000);
     if (r.ok) {
       const j = await r.json();
       if (j && j.status && j.status.url) return j.status.url;
     }
-  } catch (e) { /* 忽略 */ }
+  } catch (e) { /* 忽略，走原链接继续解析 */ }
   return url;
 }
 

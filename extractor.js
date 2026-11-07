@@ -695,6 +695,39 @@ async function ksCacheLookup(url) {
   } catch (e) { return null; }
 }
 
+/* ---------- 本机秒出缓存（全平台）：图片类解析成功即存 localStorage，重复粘贴直接出图 ---------- */
+const MEMO_KEY = 'wp_parse_memo_v1';
+function memoGet(url) {
+  try {
+    const m = JSON.parse(localStorage.getItem(MEMO_KEY) || '{}');
+    const e = m[ksCacheKey(url)];
+    if (!e || !e.at || Date.now() - e.at > 7 * 864e5) return null;
+    if (!e.images || !e.images.length) return null;
+    return e;
+  } catch (err) { return null; }
+}
+function memoSet(url, data) {
+  try {
+    if (!data || data.kind === 'video' || !data.images || !data.images.length) return;
+    const m = JSON.parse(localStorage.getItem(MEMO_KEY) || '{}');
+    m[ksCacheKey(url)] = { kind: 'images', images: data.images.slice(0, 30), title: data.title || '', cover: data.cover || '', at: Date.now() };
+    const keys = Object.keys(m);
+    while (keys.length > 40) delete m[keys.shift()];
+    localStorage.setItem(MEMO_KEY, JSON.stringify(m));
+  } catch (err) { /* 存不下就算了 */ }
+}
+
+/* ---------- 解析页一打开就给通道测速：用户点开始时最快通道已在队首 ---------- */
+let exProbed = false;
+function scheduleProbe() {
+  if (exProbed) return;
+  exProbed = true;
+  try {
+    probeChannels(PROXY_TEXT);
+    probeChannels(POST_PROXIES);
+  } catch (e) { /* 打探不影响主流程 */ }
+}
+
 async function startExtract() {
   if (exBusy) return;
   const raw = $id('link-input').value;
@@ -709,7 +742,7 @@ async function startExtract() {
         const r = { kind: 'video', play: url, title: decodeURIComponent(url.split('/').pop().split('?')[0]) || '直链视频', cover: '' };
         curResult = r;
         renderResult(r, { name: '直链' });
-        autoImportAfterParse(r, { name: '直链' });
+        autoImportAfterParse /* 已取消自动入库，改由结果页按钮显式触发 */;
       } finally { exBusy = false; }
       return;
     }
@@ -719,7 +752,7 @@ async function startExtract() {
         const r = { kind: 'images', images: [url], title: decodeURIComponent(url.split('/').pop().split('?')[0]) || '直链图片', cover: url };
         curResult = r;
         renderResult(r, { name: '直链' });
-        autoImportAfterParse(r, { name: '直链' });
+        autoImportAfterParse /* 已取消自动入库，改由结果页按钮显式触发 */;
       } finally { exBusy = false; }
       return;
     }
@@ -762,6 +795,16 @@ async function startExtract() {
         return;
       }
     }
+    /* 本机秒出缓存：该平台历史解析过的图片类链接直接出图 */
+    const me = memoGet(url);
+    if (me && me.images && me.images.length) {
+      const enc = (u) => (/^https?:\/\//i.test(u) ? u : mediaOf(u));
+      const r = { kind: 'images', images: me.images.map(enc), title: me.title || '解析缓存', cover: enc(me.cover || me.images[0]), cached: true };
+      curResult = r;
+      setStatus('本机缓存命中，直接出图（1 秒内）', 'ok');
+      renderResult(r, { name: '本机缓存' });
+      return;
+    }
     statusBusy('识别到 ' + plat.name + '，正在解析…');
     let finalURL = url;
     if (plat.short && !/\/profile\//.test(url)) {
@@ -771,6 +814,7 @@ async function startExtract() {
     const r = await plat.parse(finalURL, plat);
     curResult = r;
     renderResult(r, plat);
+    memoSet(url, r);
     /* 入库改为结果页按钮「存入壁纸库」显式操作，不再自动上传 */
   } catch (e) {
     curResult = null;
@@ -819,6 +863,14 @@ function initExtractor() {
   $id('link-input').addEventListener('paste', e => {
     setTimeout(() => { if (extractURL($id('link-input').value)) { toast('检测到粘贴，自动开始解析…'); setTimeout(startExtract, 200); } }, 120);
   });
+
+  /* 通道测速触发：切到解析页 / 聚焦 / 粘贴时后台静默打探一轮，
+   * 让最快通道在用户点「开始解析」之前就已排到队首 */
+  $$('.tab').forEach(t => t.addEventListener('click', () => {
+    if (t.dataset.tab === 'extract') scheduleProbe();
+  }));
+  const li = $id('link-input');
+  if (li) { li.addEventListener('focus', scheduleProbe); li.addEventListener('paste', scheduleProbe); }
 }
 
 initExtractor();

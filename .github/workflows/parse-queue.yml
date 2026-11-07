@@ -1,50 +1,60 @@
-name: 自己的解析中转（parse relay）
+name: 自研解析引擎（自家代抓）
 
+# 前端「解析」页派单走 repository_dispatch；也可在 Actions 页面手动填链接跑一次。
 on:
   repository_dispatch:
-    types: [parse-request]
+    types: [parse-request, parse-batch]
   workflow_dispatch:
     inputs:
-      url:
-        description: 要代抓的链接
+      urls:
+        description: 要解析的链接（多条用换行或逗号分隔）
         required: true
+        type: string
+      profile:
+        description: 按快手主页批量模式解析
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 concurrency:
-  group: parse-queue
+  group: parse-relay
   cancel-in-progress: false
 
 jobs:
-  relay:
+  parse:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 1
 
-      - name: 同步最新 main（避免覆盖其他 run 的写入）
-        run: git pull --rebase origin main || true
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: 代抓并写入 parse-cache
+      - name: 跑自研解析引擎
         env:
-          PARSE_URLS: ${{ github.event.client_payload.url || inputs.url }}
-        run: node scripts/parse-queue.mjs
+          PARSE_URLS: ${{ github.event.client_payload.urls || inputs.urls }}
+          PARSE_PROFILE: ${{ (github.event.client_payload.profile || inputs.profile) && '1' || '0' }}
+        run: node parser/relay.mjs
 
-      - name: 提交缓存（有变化才提交）
+      - name: 提交解析结果
         run: |
-          git config user.name "relay-bot"
+          git config user.name "parse-engine-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/parse-cache.json
-          if ! git diff --cached --quiet; then
-            git commit -m "代抓缓存更新 $(date -u +%FT%TZ)"
-            git push
-          else
-            echo "无变化，跳过提交"
+          git add data/parsed data/parse-cache.json
+          if git diff --cached --quiet; then
+            echo "没有新结果，跳过提交"
+            exit 0
           fi
+          git commit -m "自研引擎解析结果 $(date -u +%FT%TZ)"
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push && break
+            echo "第 $i 次推送遇到并发，重试…"
+            sleep 3
+          done

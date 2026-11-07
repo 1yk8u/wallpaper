@@ -1,69 +1,103 @@
-# 🌈 壁纸库 Wallpaper Hub
+# 壁纸库 Wallpaper Hub
 
 一个纯静态、可部署到 **GitHub Pages** 的壁纸网站：静态壁纸 + 动态壁纸（视频/GIF），支持
-**iPhone / 安卓 / 电脑**；内置 **链接解析下载**（抖音 · 快手 · 哔哩哔哩 · 小红书）和
-**快手主页批量搬运**。收藏的壁纸全部保存在你的 GitHub 仓库里，**永不丢失**。
+**iPhone / 安卓 / 电脑**；内置 **自研链接解析引擎**（抖音 · 快手 · 哔哩哔哩 · 小红书）和
+**快手主页批量搬运**。收藏的壁纸全部保存在你自己的 GitHub 仓库里。
+
+> 解析工具是本仓库自己写的（`parser/`），**不调用任何第三方解析 API**（不用 tikwm / douyin.wtf / oioweb 等），
+> 也不依赖公共 CORS 代理才能出结果。
 
 ---
 
-## 一、5 分钟部署到 GitHub Pages（网页上点点点即可，不需要敲命令）
+## 一、部署到 GitHub Pages
 
-1. **注册/登录 <https://github.com>**。
-2. 右上角 `+` → **New repository**（新仓库）：
-   - Repository name 建议填 `wallpaper`（或任意名字）；
-   - 选 **Public**（免费托管要求公开仓库）；不要勾选 README 初始化；
-   - 点 **Create repository**。
-3. 回到本文件夹 `wallpaper-site`，**选中全部文件**（含 `.github`、`.nojekyll`、data、scripts、wallpapers 文件夹），拖进 GitHub 新建的仓库页面：
-   > GitHub 网页支持直接拖文件夹和隐藏文件；如果 `.github` 拖不动，就在仓库页点 **Add file → Create new file**，文件名填 `.github/workflows/manifest.yml`，把本机同名文件内容粘进去；`.nojekyll` 同理（内容留空）。
-4. 拖完点 **Commit changes** 提交。
-5. 打开仓库 **Settings → Pages**：
-   - Build and deployment → Source 选 **Deploy from a branch**；
-   - Branch 选 **main**、目录 **/ (root)** → **Save**。
-6. 等 1~2 分钟，刷新该页面会出现网址：`https://你的用户名.github.io/仓库名/` —— 这就是你的壁纸站！手机电脑都能开。
+1. **登录 <https://github.com>** → 右上角 `+` → **New repository**：
+   - 名字建议 `wallpaper`，选 **Public**（免费 Pages 要求公开仓库），不要勾选 README 初始化。
+2. 把本文件夹里的**全部内容**（含 `.github`、`.nojekyll`、`parser`、`data`、`scripts`、`wallpapers`）拖进仓库网页提交。
+   > `.github` 拖不进去时，用 **Add file → Create new file** 手动建
+   > `.github/workflows/manifest.yml` 和 `.github/workflows/parse-queue.yml`，把本机同名文件内容粘进去；`.nojekyll` 留空即可。
+3. 仓库 **Settings → Pages** → Source 选 **Deploy from a branch** → `main` / `/(root)` → Save。
+4. 等 1~2 分钟，打开 `https://你的用户名.github.io/仓库名/` 即可。
 
-> 以后每次往 `wallpapers/` 加文件或上传预览，网页会自动重新部署（1~2 分钟）。
+> 想让「一键解析」在手机上直接可用，还需要一个**仓库写入令牌**（见下方「令牌安全」）。
+> 现有版本已在 `app.js` 里预置了站点自己的仓库连接，部署后即可用。
 
 ---
 
-## 二、怎么添加壁纸（两种方式都可）
+## 二、怎么添加壁纸
 
-### 方式 A：网站里上传（最方便，手机也行）⚙️
-1. 打开网站 → 右上角 **⚙️ 设置** → 输管理员密码 **12345678**；
-2. 首次先填 **📦 仓库配置**：
-   - GitHub 用户名 / 仓库名 / 分支 `main`；
-   - **PAT 令牌**：GitHub → 头像 → Settings → Developer settings → **Personal access tokens → Fine-grained → Generate new token**：
-     - Repository access 选 **Only select repositories** → 选中你的壁纸仓库；
-     - Permissions → Repository permissions → **Contents → Read and write**；
-     - 生成后立刻复制（只显示一次），粘贴进网站配置 → 保存 → 点「测试连接」变绿即成功。
-3. 之后即可：
-   - **📤 上传壁纸**：一次多个文件，图片视频 Gif 都行（单个建议 ≤50MB）；
-   - **🔗 添加直链**：引用外站图片/视频地址，不占仓库空间；
-   - **🗂 内容管理**：删除任意一条；
-   - **🔑 修改密码**：改的密码全网生效 ~2 分钟。
+### 方式 A：网站里上传
+点右上角设置 → 输管理员密码 → 上传图片/视频/GIF（单个建议 ≤50MB）、添加外链或管理已有条目。
+需要仓库的 **Contents 读写**权限令牌。
 
-### 方式 B：在 GitHub 网页里直接拖文件（适合超大视频，最大 100MB）
-1. 仓库 → 进入 `wallpapers` 文件夹 → **Add file → Upload files**；
-2. 把图片/视频拖进去 → Commit changes；
-3. 等 1~2 分钟：GitHub Actions 自动生成清单 → 网站出现新壁纸。文件名（去掉扩展名）就是标题。
-
-> 工作原理：`wallpapers/` 里的每个文件都会被扫描进 `data/wallpapers.json`（Actions 自动维护）；
-> 外部直链保存在 `data/links.json`。都存在你的仓库里 = **永不消失**。
-> 建议：Code 页绿色按钮 → Download ZIP 定期备份。
+### 方式 B：GitHub 网页拖文件
+把文件拖进 `wallpapers/` 文件夹提交，1~2 分钟后 Actions 自动重建 `data/wallpapers.json`，网站出现新壁纸。
+文件名（去扩展名）就是标题。适合超大视频（最大 100MB）。
 
 ---
 
-## 三、解析 / 批量搬运 使用说明
+## 三、解析引擎怎么用（重点）
 
-- **单个链接**（抖音 / 快手 / B站 / 小红书，长链短链都行）：
-  App 里点 分享 → 复制链接 → 网站里点 **📋 快捷粘贴** ✓ 自动解析 → 下载或打开后长按保存。
-- **快手主页批量搬运**：粘贴类似 `https://www.kuaishou.com/profile/xxxxx` 的主页链接 → 自动抓取该账号全部作品 → 全选/勾选后：
-  - **⬇️ 下载选中到设备**：逐个保存到手机/电脑；
-  - **→ 搬运到壁纸库**：把选中作品抓下来并提交进你的 GitHub 仓库（需已配置管理员+令牌），从此网站永久可看可下。
-- iPhone 批量下载受 Safari 限制（一次一个），分批进行更顺利；也可以直接用「搬运」存网站。
+### 网页上（手机 / 电脑都一样）
 
-> ⚠️ 解析依赖的公共接口和 CORS 代理（allorigins / codetabs / tikwm / douyin.wtf 等）
-> 属于公众服务，偶有失效，稍后重试即可。**快手批量**先抓主页首屏，翻页依赖额外通道，
-> 部分网络可能只能抓到部分作品；失败时稍后重试。内容仅供个人学习备份，尊重原作者版权。
+App 里点 **分享 → 复制链接** → 打开网站「解析」页 → 点 **快捷粘贴 · 自动开始**（或直接粘贴后点开始解析）。
+
+流程是这样的：
+
+```
+粘贴链接
+  ├─ 命中缓存（仓库轻量结果 / 总缓存 / 本机缓存） → 秒出
+  └─ 没命中
+       ├─ 立刻派单给仓库的 GitHub Actions（跑 parser/relay.mjs）
+       ├─ 同时并行试一条本地快速通道（14 秒内出结果就直接用）
+       └─ 快速通道没出 → 等自家引擎写回 data/parsed/<hash>.json（实时读 GitHub Contents API）
+            → 出图 / 出片，结果永久缓存，下次同一链接秒出
+```
+
+- 首次解析约 **1~3 分钟**（主要是 Actions 排队），页面会显示轮询轮次，**不需要刷新**。
+- 结果页可：下载、新窗口打开、复制直链、**存入壁纸库**。
+- 「主页批量搬运」粘贴 `kuaishou.com/profile/xxx`，抓完可勾选下载或搬运入库。
+
+### 本地命令行（最可靠，自己动手跑）
+
+GitHub Actions 的服务器在境外，遇到平台风控/需登录时，在自己电脑上跑引擎成功率最高：
+
+```bash
+node parser/cli.mjs "https://v.douyin.com/xxxxx"                 # 解析并打印
+node parser/cli.mjs "链接1" "链接2" --save                        # 批量解析并写进仓库
+node parser/cli.mjs --file links.txt --save                      # 从文本文件读链接
+node parser/cli.mjs "https://www.kuaishou.com/profile/xxx" --profile --save
+node parser/cli.mjs "链接" --cookie "自己的cookie" --save          # 需要登录的平台
+node parser/cli.mjs --json "链接"                                 # 输出结构化 JSON
+node parser/cli.mjs --selftest                                   # 引擎自测
+```
+
+`--save` 会写两份文件，提交后网页端立刻能命中：
+
+| 文件 | 作用 |
+| --- | --- |
+| `data/parsed/<hash>.json` | 单条链接的轻量结果，网页轮询读它（实时、不受大文件限制） |
+| `data/parse-cache.json` | 总缓存，兼容旧版页面，短链 key 与还原后的长链 key 双写 |
+
+写完执行：`git add data/parsed data/parse-cache.json && git commit -m "本地解析入库" && git push`
+
+### 在 Actions 页面手动跑一次
+
+仓库 → **Actions** → 「自研解析引擎」 → **Run workflow** → 填 `urls`（多条用换行或逗号）→ 运行。
+批量模式勾上 `profile`。
+
+### 引擎是怎么自己解析的（`parser/engine.mjs`）
+
+| 平台 | 自研做法 |
+| --- | --- |
+| 抖音 | 自跟 302 还原短链 → 抓分享页 → 括号配平剥离 `_ROUTER_DATA` / `RENDER_DATA` → 取 `images[].url_list`、`video.play_addr` → HTML CDN 直链兜底 |
+| 快手 | 抓作品页 → `__APOLLO_STATE__` 并解 `$ref` → `atlas.list` / `mainMvUrls` / `manifest.adaptationSet` → 主页走自写 GraphQL 分页 |
+| 哔哩哔哩 | 官方公开 `view` + `playurl` 接口，自己组装请求、按清晰度逐个尝试 |
+| 小红书 | `__INITIAL_STATE__` 里的 `imageList` / `video.media.stream` → og meta → CDN 深扫 |
+| 任意网页 | og meta + JSON-LD + 内嵌状态里的媒体直链深扫；图片/视频直链直接返回 |
+
+全程只请求平台自己的页面或官方公开接口。结果统一为 `{ kind, images, play, cover, title, via, ts }`，
+错误分成 `NETWORK / RISK / LOGIN / STRUCT / EMPTY`，前端据此给不同提示。
 
 ---
 
@@ -71,25 +105,48 @@
 
 | 问题 | 处理 |
 | --- | --- |
-| 网站打开空白/清单 404 | 确认仓库里有 `data/wallpapers.json`；确认 Pages 已开启（来源 main / root） |
-| 上传报 GitHub 401 | 令牌填错或过期，重新生成；404 → 检查用户名/仓库名/分支 |
-| 上传报 403 rate limit | 令牌权限没给 Contents write；检查 Fine-grained 里是否选了「本仓库」 |
-| 每次改完要等几分钟 | GitHub Pages 自动部署的正常耗时（1~2 分钟），浏览器刷新即可 |
-| 解析失败 | 公共接口临时抽风：换时段重试；仍失败就「打开原链接」后长按/右键保存 |
-| 修改密码后没生效 | config.json 提交后要等 Pages 部署完（~2 分钟）才全网生效 |
+| 网站打开空白 / 清单 404 | 确认仓库里有 `data/wallpapers.json`；Pages 已开启（main / root） |
+| 解析一直在转圈 | 首次要等 Actions 排队 1~3 分钟；去仓库 Actions 页看「自研解析引擎」有没有跑、日志报什么 |
+| 派单失败 HTTP 401/404 | 令牌失效或仓库名不对，换一枚只授权本仓库的令牌 |
+| 提示风控 / 需要登录 | 平台对境外 IP 或匿名访问有限制，用本地 `node parser/cli.mjs "链接" --save`，必要时加 `--cookie` |
+| 同一链接第二次还是慢 | 检查 `data/parsed/<hash>.json` 是否已提交；`<hash>` = `sha256(归一化链接).slice(0,16)`，前端与引擎算法一致 |
+| 视频直链过期 | 视频 CDN 地址带时效签名，缓存超过 6 小时会自动重新解析 |
+| 上传报 GitHub 401 / 403 | 令牌填错/过期，或没给 Contents write 权限 |
 
-## 目录结构
+### 令牌安全（建议尽快做）
+
+静态网页里的任何内容都是**公开可读**的，前端内置的令牌因此也等于公开。
+强烈建议换成 **Fine-grained token**：只选中本仓库、只给 **Contents: Read and write**，
+不要用带 `delete_repo` / `admin:org` / `workflow` 等权限的 classic 全权限令牌。
+换完在 GitHub → Settings → Developer settings 里**撤销旧令牌**。
+
+---
+
+## 五、目录结构
+
 ```
 wallpaper-site/
-├── index.html            网站主体（单页）
-├── style.css / core.js / app.js / extractor.js
-├── manifest.webmanifest / icon.svg
-├── data/wallpapers.json  自动生成的清单（勿手改）
-├── data/links.json       管理员添加的外部直链
-├── data/config.json      管理员改密码后自动生成
-├── wallpapers/           你的壁纸文件都在这里（含视频）
-├── scripts/build-manifest.mjs
-└── .github/workflows/manifest.yml   自动清单 Action
+├── index.html / style.css        页面与样式
+├── core.js                      公共工具（竞速通道、下载、编码）
+├── app.js                       画廊渲染 + GitHub 直连入库
+├── extractor.js                 前端解析调度与结果渲染
+├── parser/                      自研解析引擎（零依赖，Node 18+）
+│   ├── engine.mjs               核心：短链还原 / 内嵌 JSON 剥离 / 各平台适配器
+│   ├── cli.mjs                  本地命令行解析工具
+│   ├── relay.mjs                GitHub Actions 批处理（写结果 + 总缓存）
+│   └── selftest.mjs             引擎自测
+├── data/
+│   ├── wallpapers.json          自动生成的壁纸清单（勿手改）
+│   ├── links.json               外部直链
+│   ├── parse-cache.json         解析总缓存
+│   └── parsed/<hash>.json       单条解析结果（轻量、实时）
+├── scripts/
+│   ├── build-manifest.mjs       清单生成
+│   └── parse-queue.mjs          兼容入口，转发到 parser/relay.mjs
+├── wallpapers/ / thumbs/        壁纸原图与缩略图
+└── .github/workflows/
+    ├── manifest.yml             自动清单 Action
+    └── parse-queue.yml          自研解析引擎 Action（repository_dispatch / 手动）
 ```
 
-管理员默认密码：**12345678**（登录后请尽快修改）。
+内容仅供个人学习备份，请尊重原作者版权。

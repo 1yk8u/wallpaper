@@ -121,11 +121,13 @@ function orderedChannels(chans) {
 
 /* 打探一轮：给每条通道发个极小请求测延迟，成功记 RTT，失败轻惩罚 3 分钟 */
 const PROBE_TARGET = 'https://www.baidu.com/favicon.ico';
-let probeBusy = false;
+/* 按「通道组」分别上锁：以前一个全局锁会让 POST 通道的测速直接被跳过 */
+const probeBusy = new Set();
 async function probeChannels(chans, opt) {
   opt = opt || {};
-  if (probeBusy) return;
-  probeBusy = true;
+  const lockKey = (chans[0] && chans[0].label) || 'default';
+  if (probeBusy.has(lockKey)) return;
+  probeBusy.add(lockKey);
   const ms = opt.ms || 5500;
   try {
     await Promise.allSettled(chans.filter(c => c.mk && !c.wrap && !c.noBan).map(async (c) => {
@@ -135,7 +137,7 @@ async function probeChannels(chans, opt) {
         if (r) recordRTT(c.label, performance.now() - t0);
       } catch (e) { pxPenalize(c.label, 18e4); }
     }));
-  } finally { probeBusy = false; }
+  } finally { probeBusy.delete(lockKey); }
 }
 
 /* 滚动双车道竞速：任何一条成功「瞬间」全局返回，绝不陪跑慢通道；

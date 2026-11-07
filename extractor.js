@@ -247,7 +247,9 @@ function extOf(url) {
   const m = String(url || '').match(/\.(jpe?g|png|webp|gif)(\?|#|$)/i);
   return m ? '.' + m[1].toLowerCase() : '.jpg';
 }
-function chan(n, name) { statusBusy('通道 ' + n + ' · ' + name + '…'); }
+/* 快速通道被放弃后，后台仍在跑的旧通道不再抢状态栏 */
+let fastQuiet = false;
+function chan(n, name) { if (!fastQuiet) statusBusy('通道 ' + n + ' · ' + name + '…'); }
 function sanitizeName(n) { n = String(n).replace(/[\\/:*?"<>|\r\n\t]/g, '_').replace(/\s+/g, ' ').trim(); return n || 'file'; }
 function fmtSize(n) { if (n == null || isNaN(n)) return ''; const u = ['B','KB','MB','GB']; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i > 0 && n < 10 ? n.toFixed(1) : Math.round(n)) + ' ' + u[i]; }
 
@@ -274,12 +276,14 @@ function showFailHelp(url) {
     `<div class="ex-actions">
        <button class="btn" id="fail-open">↗ 打开原链接试试</button>
        <button class="btn" id="fail-copy">🔗 复制链接</button>
+       <button class="btn" id="fail-own">⚙️ 自家引擎重跑</button>
        <button class="btn ghost" id="fail-reset">♻️ 重置通道</button>
      </div>
-     <p class="hint">小技巧：直接打开原链接后，手机长按画面 → 存储；电脑右键另存为。稍等片刻再重试解析成功率更高。</p>
-     <p class="hint">全部通道都失败时：点【重置通道】清掉本机的通道拉黑与测速记录，再按一次开始；仍不行就切换网络（Wi-Fi ↔ 流量）或开关 VPN 后重试。</p>`;
+     <p class="hint">小技巧：直接打开原链接后，手机长按画面 → 存储；电脑右键另存为。</p>
+     <p class="hint">【自家引擎重跑】会把链接重新交给仓库里自己写的解析引擎（GitHub Actions），通常 1~3 分钟出结果；结果是永久缓存，下次粘贴秒出。若提示风控/需登录，在自己电脑上跑 <code>node parser/cli.mjs "链接" --save</code> 最稳。</p>`;
   $id('fail-open').onclick = () => window.open(url, '_blank', 'noopener');
   $id('fail-copy').onclick = () => copyText(url);
+  $id('fail-own').onclick = () => { hideResult(); startExtract(); };
   $id('fail-reset').onclick = () => {
     try {
       ['wp_px_ban_v1', 'wp_px_state_v1', 'wp_px_rtt_v1'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
@@ -722,16 +726,27 @@ function memoGet(url) {
   try {
     const m = JSON.parse(localStorage.getItem(MEMO_KEY) || '{}');
     const e = m[ksCacheKey(url)];
-    if (!e || !e.at || Date.now() - e.at > 7 * 864e5) return null;
+    if (!e || !e.at) return null;
+    /* 视频直链带时效签名，2 小时后不再复用；图集可以放 7 天 */
+    const maxAge = e.kind === 'video' ? 2 * 3600e3 : 7 * 864e5;
+    if (Date.now() - e.at > maxAge) return null;
+    if (e.kind === 'video') return e.play ? e : null;
     if (!e.images || !e.images.length) return null;
     return e;
   } catch (err) { return null; }
 }
 function memoSet(url, data) {
   try {
-    if (!data || data.kind === 'video' || !data.images || !data.images.length) return;
+    if (!data) return;
     const m = JSON.parse(localStorage.getItem(MEMO_KEY) || '{}');
-    m[ksCacheKey(url)] = { kind: 'images', images: data.images.slice(0, 30), title: data.title || '', cover: data.cover || '', at: Date.now() };
+    const base = { kind: data.kind, title: data.title || '', cover: data.cover || '', at: Date.now() };
+    if (data.kind === 'video') {
+      if (!data.play) return;
+      m[ksCacheKey(url)] = { ...base, play: data.play };
+    } else {
+      if (!data.images || !data.images.length) return;
+      m[ksCacheKey(url)] = { ...base, images: data.images.slice(0, 30) };
+    }
     const keys = Object.keys(m);
     while (keys.length > 40) delete m[keys.shift()];
     localStorage.setItem(MEMO_KEY, JSON.stringify(m));
@@ -751,174 +766,245 @@ function scheduleProbe() {
 
 async function startExtract() {
   if (exBusy) return;
-  const raw = $id('link-input').value;
-  const url = extractURL(raw);
+  const url = extractURL($id('link-input').value);
   if (!url) { toast('没有识别到链接，先粘贴再点开始哦', 'warn'); return; }
+
   const plat = detectPlatform(url);
-  if (!plat) {
-    /* 直链兜底：用户粘贴的就是 mp4/图片文件 */
-    if (/\.(mp4|m4v|mov|webm)(\?|#|$)/i.test(url)) {
-      exBusy = true; hideResult();
-      try {
-        const r = { kind: 'video', play: url, title: decodeURIComponent(url.split('/').pop().split('?')[0]) || '直链视频', cover: '' };
-        curResult = r;
-        renderResult(r, { name: '直链' });
-        autoImportAfterParse /* 已取消自动入库，改由结果页按钮显式触发 */;
-      } finally { exBusy = false; }
-      return;
-    }
-    if (/\.(jpe?g|png|webp|gif)(\?|#|$)/i.test(url)) {
-      exBusy = true; hideResult();
-      try {
-        const r = { kind: 'images', images: [url], title: decodeURIComponent(url.split('/').pop().split('?')[0]) || '直链图片', cover: url };
-        curResult = r;
-        renderResult(r, { name: '直链' });
-        autoImportAfterParse /* 已取消自动入库，改由结果页按钮显式触发 */;
-      } finally { exBusy = false; }
-      return;
-    }
-    setStatus('暂不支持该链接。目前支持：抖音、快手、哔哩哔哩、小红书（含短链），以及快手主页批量搬运。', 'bad');
-    return;
-  }
+  const isProfile = !!(plat && plat.key === 'kuaishou' && /\/profile\//.test(url));
+  const platName = plat ? plat.name : '通用网页';
   exBusy = true;
+  fastQuiet = false;
   hideResult();
   try {
-    /* 快手主页 → 批量搬运模式 */
-    if (plat.key === 'kuaishou' && /\/profile\//.test(url)) {
-      const uid = ksProfileId(url);
-      if (!uid) throw new Error('没识别出用户 ID，请粘贴完整的主页链接');
-      statusBusy('进入批量搬运模式（' + plat.name + '用户 ' + uid + '）…');
-      const items = await fetchKsProfileAll(uid);
-      curResult = null;
-      setStatus('主页搬运模式', 'ok');
-      renderBatch(items);
+    /* 0) 媒体直链：不用麻烦引擎，直接出 */
+    if (!plat && /\.(mp4|m4v|mov|webm)(\?|#|$)/i.test(url)) {
+      const r = { kind: 'video', play: url, title: decodeURIComponent(url.split('/').pop().split('?')[0]) || '直链视频', cover: '' };
+      curResult = r; renderResult(r, { name: '直链' }); return;
+    }
+    if (!plat && /\.(jpe?g|png|webp|gif)(\?|#|$)/i.test(url)) {
+      const r = { kind: 'images', images: [url], title: decodeURIComponent(url.split('/').pop().split('?')[0]) || '直链图片', cover: url };
+      curResult = r; renderResult(r, { name: '直链' }); return;
+    }
+
+    /* 1) 三级缓存：自家引擎结果 → 仓库总缓存 → 本机 memo，命中秒出 */
+    const hash = await ownHash(url);
+    const hit = await cacheLookupAll(url, hash);
+    if (hit) {
+      setStatus('命中' + hit.src + '，直接出结果', 'ok');
+      showOwnResult(hit.r, hit.src);
       return;
     }
-    if (plat.key === 'douyin' && /douyin\.com\/user\//i.test(url)) {
-      throw new Error('抖音主页批量暂不支持（抖音反爬更严格）。可以逐条粘贴视频/图集链接解析。');
+    if (plat && plat.key === 'douyin' && /douyin\.com\/user\//i.test(url))
+      throw new Error('抖音主页批量暂不支持，可以逐条粘贴视频/图集链接解析');
+
+    /* 2) 立刻派单给仓库里的自研引擎（后台跑，不阻塞下面的快速通道） */
+    const since = Date.now() - 60000;
+    let dispatchErr = '';
+    const dp = ownDispatch(url, { profile: isProfile })
+      .then(() => true)
+      .catch(e => { dispatchErr = String((e && e.message) || e); return false; });
+    statusBusy('已交给仓库里的自研解析引擎，同时试一条快速通道…');
+
+    /* 3) 快速通道：原来的平台解析函数，只给 14 秒，谁先出结果用谁 */
+    let fast = null;
+    if (plat) {
+      try {
+        const task = (async () => {
+          if (isProfile) {
+            const uid = ksProfileId(url);
+            if (!uid) return null;
+            return { kind: 'profile', items: await withTimeout(fetchKsProfileAll(uid), 14000), title: '快手主页' };
+          }
+          let finalURL = url;
+          if (plat.short) { try { finalURL = await withTimeout(resolveRedirect(url), 5000); } catch (e) { /* 用原链接 */ } }
+          return await plat.parse(finalURL, plat);
+        })();
+        fast = await Promise.race([task, sleep(14000).then(() => null)]);
+      } catch (e) { /* 快速通道失败不致命，自家引擎还在跑 */ }
     }
-    /* 自研缓存先行：此前解析过的快手链接直接出结果，不查第三方通道 */
-    if (plat.key === 'kuaishou') {
-      const ce = await ksCacheLookup(url);
-      if (ce && ce.images && ce.images.length) {
-        /* 仓库内路径在本环节一次性做 URL 编码（含 # → %23），显示/下载/打开共用 */
-        const enc = (u) => (/^https?:\/\//i.test(u) ? u : mediaOf(u));
-        const r = { kind: 'images', images: ce.images.map(enc), title: ce.title || '快手图集', cover: enc(ce.cover || ce.images[0]), cached: true };
-        curResult = r;
-        setStatus('命中自有解析缓存，直接出图', 'ok');
-        renderResult(r, { name: '自有缓存' });
-        return;
+    fastQuiet = true;  /* 被放弃的旧通道不许再抢状态栏 */
+
+    if (fast && (fast.kind !== 'profile' || (fast.items && fast.items.length))) {
+      if (fast.kind === 'profile') {
+        curResult = null; renderBatch(fast.items);
+        setStatus('快速通道抓到 ' + fast.items.length + ' 个作品', 'ok');
+      } else {
+        curResult = fast; renderResult(fast, plat);
+        memoSet(url, fast);
+        setStatus('快速通道解析完成 · ' + platName, 'ok');
       }
-      if (ce && ce.play) {
-        const enc = (u) => (/^https?:\/\//i.test(u) ? u : mediaOf(u));
-        const r = { kind: 'video', play: enc(ce.play), title: ce.title || '快手视频', cover: ce.cover ? enc(ce.cover) : '', cached: true };
-        curResult = r;
-        setStatus('命中自有解析缓存，直接出片', 'ok');
-        renderResult(r, { name: '自有缓存' });
-        return;
-      }
-      if (ce && ce.err) {
-        curResult = null;
-        setStatus('这条链接此前解析过：' + ce.err, 'bad');
-        showFailHelp(url);
-        return;
-      }
-    }
-    /* 本机秒出缓存：该平台历史解析过的图片类链接直接出图 */
-    const me = memoGet(url);
-    if (me && me.images && me.images.length) {
-      const enc = (u) => (/^https?:\/\//i.test(u) ? u : mediaOf(u));
-      const r = { kind: 'images', images: me.images.map(enc), title: me.title || '解析缓存', cover: enc(me.cover || me.images[0]), cached: true };
-      curResult = r;
-      setStatus('本机缓存命中，直接出图（1 秒内）', 'ok');
-      renderResult(r, { name: '本机缓存' });
       return;
     }
-    statusBusy('识别到 ' + plat.name + '，正在解析…');
-    let finalURL = url;
-    if (plat.short && !/\/profile\//.test(url)) {
-      statusBusy('检测到短链接，正在还原真实地址…');
-      finalURL = await resolveRedirect(url);
-    }
-    const r = await plat.parse(finalURL, plat);
-    curResult = r;
-    renderResult(r, plat);
-    memoSet(url, r);
-    /* 入库改为结果页按钮「存入壁纸库」显式操作，不再自动上传 */
+
+    /* 4) 快速通道没出结果 → 等自家引擎写回轻量结果文件 */
+    const dispatched = await dp;
+    if (!dispatched) throw new Error(dispatchErr || '自家引擎派单失败');
+    statusBusy('自家引擎正在仓库里解析（GitHub Actions 排队约 1~3 分钟）…');
+    const data = await ownWait(url, {
+      since, timeoutMs: 360000,
+      onTick: (n) => statusBusy('自家引擎解析中（第 ' + n + ' 轮）· 结果会自动出现，不用刷新…'),
+    });
+    const r = normaliseResult(data);
+    if (!r) throw new Error('自家引擎返回了空结果');
+    showOwnResult(r, '自家引擎');
+    const note = r.kind === 'profile' ? ' · 抓到 ' + r.items.length + ' 个作品' : '';
+    setStatus('自家解析引擎完成' + note + (data.via ? ' · ' + data.via : '') + ' · 结果已缓存，下次粘贴秒出', 'ok');
+    if (r.kind !== 'profile') memoSet(url, r);
+    /* 入库仍由结果页按钮「存入壁纸库」显式触发 */
   } catch (e) {
     curResult = null;
-    const msg = String((e && e.message) || e);
-    /* 普通通道全灭 → 把链接寄给自家仓库代抓（GitHub Actions），约 1~3 分钟 */
-    if (msg.includes('全部通道失败') && plat && plat.key && !/\/profile\//.test(url)) {
-      const queued = await queueRelay(url, plat);
-      if (queued) return;
-    }
-    setStatus('解析失败：' + msg, 'bad');
+    setStatus('解析失败：' + String((e && e.message) || e), 'bad');
     showFailHelp(url);
   } finally {
+    fastQuiet = false;
     exBusy = false;
   }
 }
 
-/* ---------- 自家中转：寄单 + 轮询 data/parse-cache.json ---------- */
-let relayBusy = false;
-async function queueRelay(url, plat) {
-  if (relayBusy) return false;
-  relayBusy = true;
+/* =====================================================================
+ * 自研解析引擎通道（前端调度）
+ *   派单  → POST /repos/{owner}/{repo}/dispatches，Actions 跑 parser/relay.mjs
+ *   取结果 → 读 GitHub Contents API 上的 data/parsed/<hash>.json
+ *            （实时，绕开 GitHub Pages 1~2 分钟的部署/CDN 延迟，也不受 1MB 限制）
+ *   <hash> 与 parser/engine.mjs 的 resultKey() 逐字节一致：sha256(key).slice(0,16)
+ * ===================================================================== */
+const OWN_CFG = () => (typeof WPGH !== 'undefined' && WPGH.cfg)
+  ? WPGH.cfg
+  : { owner: '1yk8u', repo: 'wallpaper', branch: 'main', pat: '' };
+
+async function ownHash(u) {
   try {
-    const cfg = (typeof WPGH !== 'undefined' && WPGH.cfg) ? WPGH.cfg : null;
-    if (!cfg || !cfg.pat) return false;
-    statusBusy('📮 快递小哥模式：普通通道全灭，已把链接寄给自家仓库代抓…');
-    const r = await fetch('https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) + '/dispatches', {
-      method: 'POST',
-      headers: { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + cfg.pat },
-      body: JSON.stringify({ event_type: 'parse-request', client_payload: { url: url, key: ksCacheKey(url) } }),
-    });
-    if (r.status !== 204) throw new Error('派单失败 HTTP ' + r.status);
-    const key = ksCacheKey(url);
-    const enc = (u) => (/^https?:\/\//i.test(u) ? u : mediaOf(u));
-    for (let i = 0; i < 13; i++) {   /* 15s × 13 ≈ 3 分多钟 */
-      await sleep(15000);
-      let ce = null;
-      try {
-        const j = await fetch('data/parse-cache.json?v=' + Date.now()).then(x => x.ok ? x.json() : null);
-        ce = j && j.entries && j.entries[key];
-      } catch (e) { /* 网络抖动继续等 */ }
-      if (ce && ce.images && ce.images.length) {
-        const r2 = { kind: 'images', images: ce.images.map(enc), title: ce.title || '代抓结果', cover: enc(ce.cover || ce.images[0]), cached: true };
-        curResult = r2;
-        setStatus('✅ 自家仓库代抓完成，直接出图', 'ok');
-        renderResult(r2, { name: '自家代抓' });
-        return true;
-      }
-      if (ce && ce.play) {
-        const r2 = { kind: 'video', play: enc(ce.play), title: ce.title || '代抓视频', cover: ce.cover ? enc(ce.cover) : '', cached: true };
-        curResult = r2;
-        setStatus('✅ 自家仓库代抓完成，直接出片', 'ok');
-        renderResult(r2, { name: '自家代抓' });
-        return true;
-      }
-      if (ce && ce.err) {
-        setStatus('自家代抓没抓到：' + ce.err, 'bad');
-        showFailHelp(url);
-        return false;
-      }
-      setStatus('📮 已寄出，仓库正在抓（第 ' + (i + 1) + ' 轮）…', '');
+    if (!globalThis.crypto || !crypto.subtle) return '';
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ksCacheKey(u)));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+  } catch (e) { return ''; }
+}
+
+function fromB64Utf8(s) {
+  const bin = atob(String(s).replace(/\s/g, ''));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+/** 读轻量结果文件：Contents API 优先（实时），Pages 文件兜底 */
+async function ownReadLight(url, hash) {
+  const cfg = OWN_CFG();
+  if (!hash) return null;
+  const api = 'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' +
+    encodeURIComponent(cfg.repo) + '/contents/data/parsed/' + hash + '.json?ref=' +
+    encodeURIComponent(cfg.branch || 'main') + '&t=' + Date.now();
+  try {
+    const h = { 'Accept': 'application/vnd.github+json' };
+    if (cfg.pat) h.Authorization = 'Bearer ' + cfg.pat;
+    const r = await withTimeout(fetch(api, { headers: h, cache: 'no-store' }), 12000);
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j.content) return JSON.parse(fromB64Utf8(j.content));
     }
-    setStatus('代抓超时：3 分钟没等到结果。链接已入缓存队列，稍后再解析一次即可', 'warn');
-    return false;
-  } catch (e) {
-    setStatus('自家代抓不可用：' + (e.message || e), 'bad');
-    return false;
-  } finally {
-    relayBusy = false;
+  } catch (e) { /* 换 Pages 上的同名文件 */ }
+  try {
+    const r2 = await withTimeout(fetch('data/parsed/' + hash + '.json?v=' + Date.now(), { cache: 'no-store' }), 10000);
+    if (r2.ok) return await r2.json();
+  } catch (e) { /* 还没生成 */ }
+  return null;
+}
+
+async function ownDispatch(url, opt) {
+  opt = opt || {};
+  const cfg = OWN_CFG();
+  if (!cfg.pat) throw new Error('没有仓库令牌，无法自动派单；可在仓库 Actions 页手动运行「自研解析引擎」');
+  const r = await withTimeout(fetch('https://api.github.com/repos/' + encodeURIComponent(cfg.owner) +
+    '/' + encodeURIComponent(cfg.repo) + '/dispatches', {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/vnd.github+json',
+      'Authorization': 'Bearer ' + cfg.pat,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      event_type: 'parse-request',
+      client_payload: { urls: url, key: ksCacheKey(url), profile: !!opt.profile },
+    }),
+  }), 15000);
+  if (r.status !== 204) throw new Error('派单失败 HTTP ' + r.status + '（令牌权限或仓库名不对）');
+  return true;
+}
+
+/** 轮询等自家引擎写回结果；只认派单之后生成的文件，避免读到旧失败记录 */
+async function ownWait(url, opt) {
+  opt = opt || {};
+  const hash = await ownHash(url);
+  const since = opt.since || 0;
+  const deadline = Date.now() + (opt.timeoutMs || 330000);
+  let round = 0;
+  while (Date.now() < deadline) {
+    round++;
+    const j = await ownReadLight(url, hash);
+    if (j && j.ts) {
+      const at = Date.parse(j.ts) || 0;
+      if (!since || at >= since - 5000) {
+        if (j.ok && j.data) return j.data;
+        if (j.error) throw new Error('自家引擎：' + (j.error.message || '没抓到内容') +
+          (j.error.code === 'RISK' || j.error.code === 'LOGIN' ? '（建议在本机用 CLI 解析）' : ''));
+      }
+    }
+    if (opt.onTick) opt.onTick(round, Math.round((deadline - Date.now()) / 1000));
+    await sleep(7000);
   }
+  throw new Error('自家引擎 5 分钟内没出结果（Actions 可能排队）。稍后再粘贴一次同一条链接即可命中缓存');
+}
+
+/** 把引擎/缓存里的统一结构转成渲染层要的形状 */
+function normaliseResult(ce) {
+  if (!ce) return null;
+  const enc = (u) => (/^https?:\/\//i.test(u || '') ? u : mediaOf(u || ''));
+  if (ce.kind === 'profile') {
+    return {
+      kind: 'profile', title: ce.title || '主页作品',
+      items: (ce.items || []).map(it => ({ ...it, url: enc(it.url), cover: enc(it.cover) })),
+    };
+  }
+  if (ce.kind === 'video') {
+    if (!ce.play) return null;
+    return { kind: 'video', play: enc(ce.play), title: ce.title || '', cover: enc(ce.cover || ''), cached: true, via: ce.via || '' };
+  }
+  const imgs = (ce.images || []).filter(Boolean);
+  if (!imgs.length) return null;
+  return { kind: 'images', images: imgs.map(enc), title: ce.title || '', cover: enc(ce.cover || imgs[0]), cached: true, via: ce.via || '' };
+}
+
+/** 三级缓存：自家引擎轻量结果 → 仓库总缓存 → 本机 memo */
+async function cacheLookupAll(url, hash) {
+  const light = await ownReadLight(url, hash);
+  if (light && light.ok && light.data) {
+    /* 视频直链带时效签名，超过 6 小时不复用 */
+    const age = Date.now() - (Date.parse(light.data.ts || light.ts || '') || 0);
+    const fresh = !(light.data.kind === 'video' && age > 6 * 3600e3);
+    if (fresh) { const r = normaliseResult(light.data); if (r) return { r, src: '自家引擎缓存' }; }
+  }
+  const ce = await ksCacheLookup(url);
+  if (ce && !ce.err) { const r = normaliseResult(ce); if (r) return { r, src: '仓库缓存' }; }
+  const me = memoGet(url);
+  if (me) { const r = normaliseResult(me); if (r) return { r, src: '本机缓存' }; }
+  return null;
+}
+
+function showOwnResult(r, src) {
+  if (r.kind === 'profile') {
+    curResult = null;
+    setStatus(src + '：抓到 ' + r.items.length + ' 个作品', 'ok');
+    renderBatch(r.items);
+    return;
+  }
+  curResult = r;
+  renderResult(r, { name: src || '自家引擎' });
 }
 
 /* ---------- UI 绑定 ---------- */
 const EX_HINTS = {
-  single: '单个链接支持：抖音 · 快手 · 哔哩哔哩 · 小红书（长链、短链都行）',
-  batch: '批量搬运：粘贴快手个人主页链接（kuaishou.com/profile/xxx），自动抓取该账号全部作品，可勾选下载或搬运入库',
+  single: '自家解析引擎支持：抖音 · 快手 · 哔哩哔哩 · 小红书（长链短链都行）。首次解析约 1~3 分钟，结果会永久缓存，之后秒出',
+  batch: '批量搬运：粘贴快手个人主页链接（kuaishou.com/profile/xxx），自家引擎抓取该账号作品，可勾选下载或搬运入库',
 };
 
 function setExMode(mode) {

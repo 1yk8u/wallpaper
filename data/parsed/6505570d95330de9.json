@@ -1,0 +1,10 @@
+{
+  "key": "v.kuaishou.com/kvmba3wp",
+  "ok": false,
+  "error": {
+    "code": "STRUCT",
+    "message": "快手页面没有作品数据（可能是推荐页/风控页/短链已失效），换完整作品链接或在本地 CLI 里试"
+  },
+  "engine": "1.0.0",
+  "ts": "2026-11-07T13:16:29.952Z"
+}

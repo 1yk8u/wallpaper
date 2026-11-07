@@ -1,0 +1,50 @@
+name: 自己的解析中转（parse relay）
+
+on:
+  repository_dispatch:
+    types: [parse-request]
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 要代抓的链接
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parse-queue
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: 同步最新 main（避免覆盖其他 run 的写入）
+        run: git pull --rebase origin main || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 代抓并写入 parse-cache
+        env:
+          PARSE_URLS: ${{ github.event.client_payload.url || inputs.url }}
+        run: node scripts/parse-queue.mjs
+
+      - name: 提交缓存（有变化才提交）
+        run: |
+          git config user.name "relay-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/parse-cache.json
+          if ! git diff --cached --quiet; then
+            git commit -m "代抓缓存更新 $(date -u +%FT%TZ)"
+            git push
+          else
+            echo "无变化，跳过提交"
+          fi

@@ -809,6 +809,14 @@ async function startExtract() {
         renderResult(r, { name: '自有缓存' });
         return;
       }
+      if (ce && ce.play) {
+        const enc = (u) => (/^https?:\/\//i.test(u) ? u : mediaOf(u));
+        const r = { kind: 'video', play: enc(ce.play), title: ce.title || '快手视频', cover: ce.cover ? enc(ce.cover) : '', cached: true };
+        curResult = r;
+        setStatus('命中自有解析缓存，直接出片', 'ok');
+        renderResult(r, { name: '自有缓存' });
+        return;
+      }
       if (ce && ce.err) {
         curResult = null;
         setStatus('这条链接此前解析过：' + ce.err, 'bad');
@@ -839,10 +847,71 @@ async function startExtract() {
     /* 入库改为结果页按钮「存入壁纸库」显式操作，不再自动上传 */
   } catch (e) {
     curResult = null;
-    setStatus('解析失败：' + (e.message || e), 'bad');
+    const msg = String((e && e.message) || e);
+    /* 普通通道全灭 → 把链接寄给自家仓库代抓（GitHub Actions），约 1~3 分钟 */
+    if (msg.includes('全部通道失败') && plat && plat.key && !/\/profile\//.test(url)) {
+      const queued = await queueRelay(url, plat);
+      if (queued) return;
+    }
+    setStatus('解析失败：' + msg, 'bad');
     showFailHelp(url);
   } finally {
     exBusy = false;
+  }
+}
+
+/* ---------- 自家中转：寄单 + 轮询 data/parse-cache.json ---------- */
+let relayBusy = false;
+async function queueRelay(url, plat) {
+  if (relayBusy) return false;
+  relayBusy = true;
+  try {
+    const cfg = (typeof WPGH !== 'undefined' && WPGH.cfg) ? WPGH.cfg : null;
+    if (!cfg || !cfg.pat) return false;
+    statusBusy('📮 快递小哥模式：普通通道全灭，已把链接寄给自家仓库代抓…');
+    const r = await fetch('https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) + '/dispatches', {
+      method: 'POST',
+      headers: { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + cfg.pat },
+      body: JSON.stringify({ event_type: 'parse-request', client_payload: { url: url, key: ksCacheKey(url) } }),
+    });
+    if (r.status !== 204) throw new Error('派单失败 HTTP ' + r.status);
+    const key = ksCacheKey(url);
+    const enc = (u) => (/^https?:\/\//i.test(u) ? u : mediaOf(u));
+    for (let i = 0; i < 13; i++) {   /* 15s × 13 ≈ 3 分多钟 */
+      await sleep(15000);
+      let ce = null;
+      try {
+        const j = await fetch('data/parse-cache.json?v=' + Date.now()).then(x => x.ok ? x.json() : null);
+        ce = j && j.entries && j.entries[key];
+      } catch (e) { /* 网络抖动继续等 */ }
+      if (ce && ce.images && ce.images.length) {
+        const r2 = { kind: 'images', images: ce.images.map(enc), title: ce.title || '代抓结果', cover: enc(ce.cover || ce.images[0]), cached: true };
+        curResult = r2;
+        setStatus('✅ 自家仓库代抓完成，直接出图', 'ok');
+        renderResult(r2, { name: '自家代抓' });
+        return true;
+      }
+      if (ce && ce.play) {
+        const r2 = { kind: 'video', play: enc(ce.play), title: ce.title || '代抓视频', cover: ce.cover ? enc(ce.cover) : '', cached: true };
+        curResult = r2;
+        setStatus('✅ 自家仓库代抓完成，直接出片', 'ok');
+        renderResult(r2, { name: '自家代抓' });
+        return true;
+      }
+      if (ce && ce.err) {
+        setStatus('自家代抓没抓到：' + ce.err, 'bad');
+        showFailHelp(url);
+        return false;
+      }
+      setStatus('📮 已寄出，仓库正在抓（第 ' + (i + 1) + ' 轮）…', '');
+    }
+    setStatus('代抓超时：3 分钟没等到结果。链接已入缓存队列，稍后再解析一次即可', 'warn');
+    return false;
+  } catch (e) {
+    setStatus('自家代抓不可用：' + (e.message || e), 'bad');
+    return false;
+  } finally {
+    relayBusy = false;
   }
 }
 

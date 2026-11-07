@@ -476,17 +476,39 @@ async function parseKuaishou(url, ctx) {
   fail('STRUCT', '快手页面没有作品数据（可能是推荐页/风控页/短链已失效），换完整作品链接或在本地 CLI 里试');
 }
 
+/* B 站对无设备指纹的请求常返回 -412，先访问首页领一份 buvid3 cookie 再打 API */
+async function biliCookie() {
+  try {
+    const r = await httpGet('https://www.bilibili.com/', { timeout: 12000 });
+    const sc = r.headers.get('set-cookie') || '';
+    const out = [];
+    for (const n of ['buvid3', 'buvid4', 'b_nut', 'b_lsid', 'bili_ticket']) {
+      const m = sc.match(new RegExp('(?:^|,\\s*|;\\s*)' + n + '=([^;,]+)'));
+      if (m) out.push(n + '=' + m[1].trim());
+    }
+    return out.join('; ');
+  } catch (e) { return ''; }
+}
+
 /* ---- B 站：官方公开接口，自己组装与解析 ---- */
 async function parseBilibili(url) {
   const bv = (url.match(/BV[0-9A-Za-z]{10}/) || [])[0] || '';
   const aid = (url.match(/\/av(\d{4,})/i) || url.match(/[?&]aid=(\d+)/) || [])[1] || '';
   if (!bv && !aid) fail('STRUCT', '没识别出 BV 号 / av 号，请粘贴完整视频页链接');
-  const H = { referer: 'https://www.bilibili.com/', origin: 'https://www.bilibili.com' };
+  const H = {
+    referer: 'https://www.bilibili.com/', origin: 'https://www.bilibili.com',
+    accept: 'application/json, text/plain, */*',
+    'sec-fetch-site': 'same-site', 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty',
+  };
+  const ck = await biliCookie();
+  if (ck) H.cookie = ck;
   const vr = await httpGet('https://api.bilibili.com/x/web-interface/view?' + (bv ? 'bvid=' + bv : 'aid=' + aid),
     { headers: H, timeout: 20000 });
   let v = null;
   try { v = await vr.json(); } catch (e) { /* fallthrough */ }
-  if (!v || v.code !== 0 || !v.data) fail('RISK', 'B 站 view 接口返回 code ' + (v && v.code) + '：' + (v && v.message || '视频不存在或触发风控'));
+  if (!v || v.code !== 0 || !v.data)
+    fail('RISK', 'B 站接口返回 code ' + (v && v.code) + '（' + (v && v.message || '风控拦截') +
+      '）。境外服务器 IP 常被拦，建议在自己电脑上用本地解析服务或 CLI');
   const d = v.data;
   const cid = d.cid;
   for (const qn of [80, 64, 32, 16]) {

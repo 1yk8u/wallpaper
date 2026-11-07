@@ -797,6 +797,25 @@ async function startExtract() {
     if (plat && plat.key === 'douyin' && /douyin\.com\/user\//i.test(url))
       throw new Error('抖音主页批量暂不支持，可以逐条粘贴视频/图集链接解析');
 
+    /* 1.5) 本地解析引擎优先：自己电脑的网络不会被平台风控，最快且最稳 */
+    if (ownEndpoint()) {
+      statusBusy('正在用你自己的本地解析引擎…');
+      try {
+        const data = await parseViaLocal(url, isProfile);
+        const r = normaliseResult(data);
+        if (r) {
+          showOwnResult(r, '本地引擎');
+          const note = r.kind === 'profile' ? ' · 抓到 ' + r.items.length + ' 个作品' : '';
+          setStatus('本地解析引擎完成' + note + (data.via ? ' · ' + data.via : '') + '，秒出', 'ok');
+          if (r.kind !== 'profile') memoSet(url, r);
+          return;
+        }
+      } catch (e) {
+        statusBusy('本地引擎没连上（' + String((e && e.message) || e) + '），改走仓库代抓…');
+        await sleep(600);
+      }
+    }
+
     /* 2) 立刻派单给仓库里的自研引擎（后台跑，不阻塞下面的快速通道） */
     const since = Date.now() - 60000;
     let dispatchErr = '';
@@ -871,6 +890,23 @@ async function startExtract() {
 const OWN_CFG = () => (typeof WPGH !== 'undefined' && WPGH.cfg)
   ? WPGH.cfg
   : { owner: '1yk8u', repo: 'wallpaper', branch: 'main', pat: '' };
+
+/* 本地解析服务（node parser/serve.mjs），存在本机浏览器里，不上传 */
+const OWN_EP_KEY = 'wp_own_endpoint_v1';
+function ownEndpoint() {
+  try { return String(localStorage.getItem(OWN_EP_KEY) || '').trim().replace(/\/+$/, ''); }
+  catch (e) { return ''; }
+}
+async function parseViaLocal(url, isProfile) {
+  const ep = ownEndpoint();
+  if (!ep) return null;
+  const q = ep + '/parse?url=' + encodeURIComponent(url) + (isProfile ? '&profile=1' : '');
+  const r = await withTimeout(fetch(q, { cache: 'no-store' }), 45000, '本地引擎超时');
+  if (!r.ok) throw new Error('本地引擎 HTTP ' + r.status);
+  const j = await r.json();
+  if (!j || !j.ok) throw new Error((j && j.error && j.error.message) || '本地引擎没抓到内容');
+  return j.data;
+}
 
 async function ownHash(u) {
   try {
@@ -1047,6 +1083,38 @@ function initExtractor() {
   }));
   const li = $id('link-input');
   if (li) { li.addEventListener('focus', scheduleProbe); li.addEventListener('paste', scheduleProbe); }
+
+  /* 高级：本地解析引擎地址 */
+  const epInput = $id('own-endpoint'), epStatus = $id('own-endpoint-status');
+  if (epInput && epStatus) {
+    epInput.value = ownEndpoint();
+    const show = (text, kind) => {
+      epStatus.classList.remove('hidden');
+      epStatus.className = 'ex-status' + (kind ? ' ' + kind : '');
+      epStatus.textContent = text;
+    };
+    $id('btn-own-save').onclick = async () => {
+      let v = (epInput.value || '').trim().replace(/\/+$/, '');
+      if (v && !/^https?:\/\//i.test(v)) v = 'http://' + v;
+      try { if (v) localStorage.setItem(OWN_EP_KEY, v); else localStorage.removeItem(OWN_EP_KEY); } catch (e) { /* ignore */ }
+      epInput.value = v;
+      if (!v) { show('已清除，之后走仓库代抓'); return; }
+      show('正在测试连接…');
+      try {
+        const r = await withTimeout(fetch(v + '/health', { cache: 'no-store' }), 9000, '连接超时');
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.ok) show('已连接：本地解析引擎 v' + (j.engine || '?') + '，之后解析优先走它', 'ok');
+        else show('地址没响应，确认已在电脑上执行 node parser/serve.mjs', 'bad');
+      } catch (e) {
+        show('连不上：' + String((e && e.message) || e) + '（HTTPS 页面访问本机 http 服务，Chrome/Edge 通常允许；手机请用仓库代抓）', 'bad');
+      }
+    };
+    $id('btn-own-clear').onclick = () => {
+      try { localStorage.removeItem(OWN_EP_KEY); } catch (e) { /* ignore */ }
+      epInput.value = '';
+      show('已清除，之后走仓库代抓');
+    };
+  }
 }
 
 initExtractor();

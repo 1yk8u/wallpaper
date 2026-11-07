@@ -47,7 +47,8 @@ App 里点 **分享 → 复制链接** → 打开网站「解析」页 → 点 *
 ```
 粘贴链接
   ├─ 命中缓存（仓库轻量结果 / 总缓存 / 本机缓存） → 秒出
-  └─ 没命中
+  ├─ 配置了本地解析引擎 → 调自己电脑上的服务 → 1~3 秒出（最稳，推荐电脑）
+  └─ 都没命中
        ├─ 立刻派单给仓库的 GitHub Actions（跑 parser/relay.mjs）
        ├─ 同时并行试一条本地快速通道（14 秒内出结果就直接用）
        └─ 快速通道没出 → 等自家引擎写回 data/parsed/<hash>.json（实时读 GitHub Contents API）
@@ -58,9 +59,22 @@ App 里点 **分享 → 复制链接** → 打开网站「解析」页 → 点 *
 - 结果页可：下载、新窗口打开、复制直链、**存入壁纸库**。
 - 「主页批量搬运」粘贴 `kuaishou.com/profile/xxx`，抓完可勾选下载或搬运入库。
 
-### 本地命令行（最可靠，自己动手跑）
+### 本地解析服务（网页直接调用，推荐）
 
-GitHub Actions 的服务器在境外，遇到平台风控/需登录时，在自己电脑上跑引擎成功率最高：
+GitHub Actions 的服务器在美国，B 站 / 抖音 / 快手 / 小红书常对境外 IP 风控
+（例如 B 站返回 `code -412 request was banned`）。在你自己电脑上跑同一个引擎就没这问题：
+
+```bash
+node parser/serve.mjs                                  # 只监听 127.0.0.1:8787
+HOST=0.0.0.0 PORT=8787 node parser/serve.mjs          # 同一 Wi-Fi 的手机也能访问
+```
+
+然后在网站「解析」页 → **高级 · 本地解析引擎** → 填 `http://127.0.0.1:8787` → 保存并测试。
+连上后所有解析优先走它，**1~3 秒出结果**，不再等 Actions。
+
+服务只提供 `GET /health` 和 `GET /parse?url=链接`，不写文件、不上传任何内容，别把它直接暴露到公网。
+
+### 本地命令行（自己动手跑，也能把结果写进仓库）
 
 ```bash
 node parser/cli.mjs "https://v.douyin.com/xxxxx"                 # 解析并打印
@@ -108,7 +122,7 @@ node parser/cli.mjs --selftest                                   # 引擎自测
 | 网站打开空白 / 清单 404 | 确认仓库里有 `data/wallpapers.json`；Pages 已开启（main / root） |
 | 解析一直在转圈 | 首次要等 Actions 排队 1~3 分钟；去仓库 Actions 页看「自研解析引擎」有没有跑、日志报什么 |
 | 派单失败 HTTP 401/404 | 令牌失效或仓库名不对，换一枚只授权本仓库的令牌 |
-| 提示风控 / 需要登录 | 平台对境外 IP 或匿名访问有限制，用本地 `node parser/cli.mjs "链接" --save`，必要时加 `--cookie` |
+| 提示风控 / 需要登录 / B站 -412 | Actions 境外 IP 被平台拦了：电脑上跑 `node parser/serve.mjs` 并在网页「高级」里填地址，或用 CLI `--save` |
 | 同一链接第二次还是慢 | 检查 `data/parsed/<hash>.json` 是否已提交；`<hash>` = `sha256(归一化链接).slice(0,16)`，前端与引擎算法一致 |
 | 视频直链过期 | 视频 CDN 地址带时效签名，缓存超过 6 小时会自动重新解析 |
 | 上传报 GitHub 401 / 403 | 令牌填错/过期，或没给 Contents write 权限 |
@@ -133,6 +147,7 @@ wallpaper-site/
 ├── parser/                      自研解析引擎（零依赖，Node 18+）
 │   ├── engine.mjs               核心：短链还原 / 内嵌 JSON 剥离 / 各平台适配器
 │   ├── cli.mjs                  本地命令行解析工具
+│   ├── serve.mjs                本地解析服务（网页/手机可调，带 CORS）
 │   ├── relay.mjs                GitHub Actions 批处理（写结果 + 总缓存）
 │   └── selftest.mjs             引擎自测
 ├── data/

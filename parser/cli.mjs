@@ -36,6 +36,7 @@ function help() {
   node parser/cli.mjs <链接...> [选项]
   node parser/cli.mjs --file links.txt --save
   node parser/cli.mjs --selftest
+  node parser/serve.mjs   # 另起一个本地解析服务，网页可直接调用
 
 选项：
   --save          把结果写进仓库（data/parsed/ + data/parse-cache.json）

@@ -271,9 +271,23 @@ function hideResult() { $id('ex-result').innerHTML = ''; $id('ex-result').classL
 function showFailHelp(url) {
   $id('ex-result').classList.remove('hidden');
   $id('ex-result').innerHTML =
-    `<div class="ex-actions"><button class="btn" id="fail-open">↗ 打开原链接试试</button><button class="btn" id="fail-copy">🔗 复制链接</button></div><p class="hint">小技巧：直接打开原链接后，手机长按画面 → 存储；电脑右键另存为。稍等片刻再重试解析成功率更高。</p>`;
+    `<div class="ex-actions">
+       <button class="btn" id="fail-open">↗ 打开原链接试试</button>
+       <button class="btn" id="fail-copy">🔗 复制链接</button>
+       <button class="btn ghost" id="fail-reset">♻️ 重置通道</button>
+     </div>
+     <p class="hint">小技巧：直接打开原链接后，手机长按画面 → 存储；电脑右键另存为。稍等片刻再重试解析成功率更高。</p>
+     <p class="hint">全部通道都失败时：点【重置通道】清掉本机的通道拉黑与测速记录，再按一次开始；仍不行就切换网络（Wi-Fi ↔ 流量）或开关 VPN 后重试。</p>`;
   $id('fail-open').onclick = () => window.open(url, '_blank', 'noopener');
   $id('fail-copy').onclick = () => copyText(url);
+  $id('fail-reset').onclick = () => {
+    try {
+      ['wp_px_ban_v1', 'wp_px_state_v1', 'wp_px_rtt_v1'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+      probeChannels(PROXY_TEXT);
+      probeChannels(POST_PROXIES);
+      toast('通道记录已重置，正在重新打探测速…', 'ok');
+    } catch (e) { toast('重置失败：' + (e.message || e), 'warn'); }
+  };
 }
 function copyText(t) { navigator.clipboard.writeText(t).then(() => toast('已复制')).catch(() => toast('复制失败', 'warn')); }
 

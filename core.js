@@ -41,6 +41,7 @@ function withTimeout(p, ms, label) {
 const PROXY_TEXT = [
   { label: 'cors/workers', mk: u => 'https://test.cors.workers.dev/?' + u, bin: true },
   { label: 'allorigins/raw', mk: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), bin: true },
+  { label: 'corsproxy', mk: u => 'https://corsproxy.io/?url=' + encodeURIComponent(u), bin: true },
   { label: 'codetabs', mk: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), bin: true, noBan: true },
   { label: 'allorigins/get', wrap: async u => {
       const r = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(u));
@@ -153,13 +154,23 @@ async function raceFetch(chans, url, opt) {
   const list = normal.concat(guards);
   if (!list.length) throw new Error('没有可用通道');
   const errs = [];
+  const failed = [];       /* 无成功时的延迟判罚记录 {label, noBan, httpish} */
+  let sawSuccess = false;
   return await new Promise((resolve, reject) => {
     let next = 0, inFlight = 0, done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const finish = (v) => { if (!done) { done = true; sawSuccess = true; resolve(v); } };
     const failIfDrained = () => {
-      if (!done && next >= list.length && inFlight === 0) {
-        done = true;
-        reject(new Error('全部通道失败（' + errs.slice(0, 3).join('；') + '）'));
+      if (done || next < list.length || inFlight !== 0) return;
+      done = true;
+      /* 判罚规则：
+       * · 混合轮（有通道成功/有通道拿到了 HTTP 状态码）→ 失败者记 strike（通道之罪）
+       * · 纯传输层全灭（无一拿到响应）→ 本机网络断/被墙，不记 strike（防雪崩拉黑全队） */
+      const anyHttp = failed.some(f => f.httpish);
+      if (sawSuccess || anyHttp) failed.forEach(f => { if (!f.noBan) pxMarkFail(f.label); });
+      if (!sawSuccess) {
+        const blackout = !anyHttp;
+        reject(new Error('全部通道失败（' + errs.slice(0, 3).join('；') + '）'
+          + (blackout ? '。像是本机连不上解析中转：点下方【重置通道】再试，或切换 Wi-Fi/流量、开关 VPN' : '')));
       }
     };
     const launch = () => {
@@ -178,8 +189,13 @@ async function raceFetch(chans, url, opt) {
             pxMarkOk(c.label);
             finish({ c, resp });
           } catch (e) {
-            if (!c.noBan) { pxPenalize(c.label); pxMarkFail(c.label); }
-            errs.push((e && e.message) || String(e));
+            const raw = String((e && e.message) || e);
+            const msg = raw.indexOf(c.label) === 0 ? raw : c.label + '：' + raw;
+            const httpish = /HTTP \d{3}/.test(raw);
+            if (sawSuccess) { if (!c.noBan) pxMarkFail(c.label); }
+            else failed.push({ label: c.label, noBan: !!c.noBan, httpish });
+            if (!c.noBan) pxPenalize(c.label);
+            errs.push(msg);
           } finally {
             inFlight--;
             if (!done) launch();
@@ -196,6 +212,16 @@ async function raceFetch(chans, url, opt) {
 async function fetchTextSmart(url, opt) {
   opt = opt || {};
   if (opt.ms == null) opt.ms = 22000;
+  /* 直连优先：CORS 开放的解析 API（tikwm / douyin.wtf / oioweb 等）一步命中，
+   * 响应过不来（无 ACAO / 被墙）会立刻抛错，通常 <300ms，随后转代理竞速 */
+  try {
+    const t0 = performance.now();
+    const rd = await withTimeout(fetch(url), 2600, '直连超时');
+    if (rd && rd.ok) {
+      const td = await rd.text();
+      if (td) { recordRTT('直连', performance.now() - t0); pxMarkOk('直连'); return td; }
+    }
+  } catch (e) { /* 直连不通 → 立刻走代理 */ }
   const { resp } = await raceFetch(PROXY_TEXT, url, { ms: opt.ms, wave: 2 });
   const t = await resp.text();
   if (!t) throw new Error('通道返回了空内容');

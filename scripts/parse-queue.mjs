@@ -59,8 +59,9 @@ async function resolveShort(url) {
 async function parseKuaishou(finalURL) {
   /* SSR APOLLO_STATE（与前端 ksProfileSSR 同构） */
   const html = await (await fetchT(finalURL, { headers: { accept: 'text/html,application/xhtml+xml' } }, 30000)).text();
+  if (/请输入验证码|securityCheck|verify/i.test(html.slice(0, 3000))) throw new Error('快手风控页(需验证)');
   const m = html.match(/window\.__APOLLO_STATE__\s*=\s*(\{[\s\S]*?\})<\/script>/);
-  if (!m) return null;
+  if (!m) throw new Error('页面无 APOLLO_STATE(html长度' + html.length + ')');
   const st = JSON.parse(String(m[1]).replace(/undefined/g, 'null'));
   const items = [];
   for (const key in st) {
@@ -83,7 +84,8 @@ async function parseKuaishou(finalURL) {
     }
     items.push({ kind, images, play, title: caption, cover: coverUse });
   }
-  return items.length ? items[0] : null;
+  if (!items.length) throw new Error('APOLLO_STATE 解析到 0 个作品');
+  return items[0];
 }
 
 async function parseDouyin(finalURL) {
@@ -108,7 +110,7 @@ async function parseDouyin(finalURL) {
     if (imgs.length) return { kind: 'images', images: imgs, title, cover: imgs[0] };
     if (vids.length) return { kind: 'video', play: vids[0], title, cover: imgs[0] || '' };
   } catch (e) { /* 再败则失败 */ }
-  return null;
+  throw new Error('tikwm 与 douyin.wtf 均未取到内容');
 }
 
 async function parseBilibili(finalURL) {
@@ -116,15 +118,15 @@ async function parseBilibili(finalURL) {
   const aid = (finalURL.match(/av(\d{6,})/) || [])[1];
   const target = bv ? 'https://api.bilibili.com/x/web-interface/view?bvid=' + bv
     : (aid ? 'https://api.bilibili.com/x/web-interface/view?aid=' + aid : null);
-  if (!target) return null;
+  if (!target) throw new Error('无法识别 BV/av 号');
   const H = { headers: { referer: 'https://www.bilibili.com/' } };
   const v = await (await fetchT(target, H, 30000)).json();
-  if (!v || v.code !== 0 || !v.data) return null;
+  if (!v || v.code !== 0 || !v.data) throw new Error('B站 view API 未取到(code ' + (v && v.code) + ')');
   const cid = v.data.cid, avid = v.data.aid;
   const p = await (await fetchT('https://api.bilibili.com/x/player/playurl?avid=' + avid + '&cid=' + cid + '&qn=64&type=&otype=json&platform=html5&high_quality=1', H, 30000)).json();
   const play = p && p.data && p.data.durl && p.data.durl[0] && p.data.durl[0].url;
   if (play) return { kind: 'video', play, title: v.data.title || 'B站视频', cover: v.data.pic || '' };
-  return null;
+  throw new Error('B站 playurl 未取到播放地址');
 }
 
 async function parseXhs(finalURL, html) {
@@ -141,7 +143,7 @@ async function parseXhs(finalURL, html) {
     (() => { try { const s = mHtml.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})<\/script>/); return s ? JSON.parse(s[1].replace(/undefined/g, 'null')) : {}; } catch (e) { return {}; } })(),
     (_, v) => /^https?:\/\//.test(v) && /sns-img|sns-webpic|xhscdn/.test(v)
   ).map(unesc)])].filter(u => !/avatar|logo|icon/i.test(u)).slice(0, 30);
-  if (!cands.length) return null;
+  if (!cands.length) throw new Error('小红书页面未取到图片(需登录/风控)');
   return { kind: 'images', images: cands, title, cover: cands[0] };
 }
 
@@ -162,6 +164,7 @@ for (const raw of urls) {
   const hasGood = !!(prior && !prior.err);
   try {
     const finalURL = await resolveShort(url);
+    console.log('RESOLVE ' + key + ' → ' + finalURL);
     const isKs = /kuaishou\.com|chenzhongtech/i.test(finalURL) || /kuaishou\.com|chenzhongtech/i.test(url);
     const isDouyin = /douyin\.com|iesdouyin\.com/i.test(finalURL);
     const isBili = /bilibili\.com|b23\.tv/i.test(finalURL);

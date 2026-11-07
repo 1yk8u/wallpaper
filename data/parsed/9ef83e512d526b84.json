@@ -1,0 +1,10 @@
+{
+  "key": "bilibili.com/video/bv1gj411x7h7",
+  "ok": false,
+  "error": {
+    "code": "RISK",
+    "message": "B 站 view 接口返回 code -412：request was banned"
+  },
+  "engine": "1.0.0",
+  "ts": "2026-11-07T12:35:53.222Z"
+}

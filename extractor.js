@@ -797,6 +797,13 @@ async function startExtract() {
     if (plat && plat.key === 'douyin' && /douyin\.com\/user\//i.test(url))
       throw new Error('抖音主页批量暂不支持，可以逐条粘贴视频/图集链接解析');
 
+    /* 1.2) 先把派单发出去（后台跑）：仓库引擎和下面的浏览器端引擎同时开工，谁先出结果用谁 */
+    const since = Date.now() - 60000;
+    let dispatchErr = '';
+    const dp = ownDispatch(url, { profile: isProfile })
+      .then(() => true)
+      .catch(e => { dispatchErr = String((e && e.message) || e); return false; });
+
     /* 1.5) 本地解析引擎优先：自己电脑的网络不会被平台风控，最快且最稳 */
     if (ownEndpoint()) {
       statusBusy('正在用你自己的本地解析引擎…');
@@ -818,9 +825,9 @@ async function startExtract() {
 
     /* 1.7) 浏览器端自研引擎：自己抓页面自己剥 JSON 自己挖直链，不经过任何第三方解析接口 */
     if (plat && !isProfile) {
-      statusBusy('自研引擎 · 浏览器端解析中…');
+      statusBusy('自研引擎 · 浏览器端与仓库引擎同时解析中…');
       try {
-        const r = await withTimeout(ownBrowserParse(url, plat), 60000, '浏览器端解析超时');
+        const r = await withTimeout(ownBrowserParse(url, plat), 30000, '浏览器端解析超时');
         if (r && (r.play || (r.images && r.images.length))) {
           curResult = r;
           renderResult(r, { name: '自研引擎' });
@@ -835,12 +842,7 @@ async function startExtract() {
       await sleep(400);
     }
 
-    /* 2) 立刻派单给仓库里的自研引擎（后台跑，不阻塞下面的快速通道） */
-    const since = Date.now() - 60000;
-    let dispatchErr = '';
-    const dp = ownDispatch(url, { profile: isProfile })
-      .then(() => true)
-      .catch(e => { dispatchErr = String((e && e.message) || e); return false; });
+    /* 2) 派单已在第 1.2 步提前发出，这里直接并行抢快速通道 */
     statusBusy('已交给仓库里的自研解析引擎，同时试一条快速通道…');
 
     /* 3) 快速通道：原来的平台解析函数，只给 14 秒，谁先出结果用谁 */

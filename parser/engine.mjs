@@ -418,10 +418,27 @@ async function parseDouyin(url, ctx) {
 
 /* ---- 快手：APOLLO_STATE / INITIAL_STATE / atlas / GraphQL ---- */
 async function parseKuaishou(url, ctx) {
-  const page = await getHTML(url, {
-    mobile: true,
-    headers: { referer: 'https://www.kuaishou.com/', accept: 'text/html,application/xhtml+xml' },
-  });
+  /* 手机 UA 和桌面 UA 各试一次：两类页面内嵌数据形态不同，有的风控只弹其中一种 */
+  const tries = [
+    { mobile: true,  headers: { referer: 'https://www.kuaishou.com/', accept: 'text/html,application/xhtml+xml' } },
+    { mobile: false, headers: { referer: 'https://www.kuaishou.com/', accept: 'text/html,application/xhtml+xml' } },
+  ];
+  let page = null, lastErr = '';
+  for (const t of tries) {
+    try {
+      const p = await getHTML(url, t);
+      /* 页面里带作品数据（photoId/mainMvUrls/mp4）才算有效，否则换下一种 UA 再试 */
+      if (p && p.html && /photoId|photo_id|mainMvUrls|coverUrls|"photoUrl"|og:video|\.mp4|kphoto/i.test(p.html)) { page = p; break; }
+      if (p && p.html && !page) page = p;   /* 先留着，万一两种都没货用它报错 */
+    } catch (e) { lastErr = String(e.message || e); }
+  }
+  if (!page) fail('RISK', '快手页面拉取失败（' + (lastErr || '网络异常') + '），稍后重试或换完整作品链接');
+  if (!/photoId|photo_id|mainMvUrls|coverUrls|"photoUrl"|og:video|\.mp4|kphoto/i.test(page.html)) {
+    const risk = /环境异常|访问过于频繁|验证码|安全验证|扫码登录|二维码|请登录|login/i.test(page.html);
+    fail('RISK', risk
+      ? '快手弹了风控/登录页（服务器 IP 被拦）。手机上请用电脑跑 node parser/serve.mjs 后在高级设置里连本地引擎；电脑上直接用 node parser/cli.mjs 最稳'
+      : '快手页面没有作品数据（可能是推荐页/风控页/短链已失效），换完整作品链接或在本地 CLI 里试');
+  }
   const meta = metaTags(page.html);
   const states = extractStates(page.html);
   const items = [];

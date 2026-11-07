@@ -26,19 +26,23 @@ function opTimeout(promise, ms, msg) {
   ]);
 }
 
-/** 依次尝试各中转抓页面，返回 { html, via }；全失败抛错（带各通道原因） */
+/** 所有中转并发竞速，第一个抓到的直接用（快几倍）；全失败抛汇总错误 */
 async function opFetchPage(url, opt) {
   opt = opt || {};
-  const errors = [];
-  for (const r of OP_RELAYS) {
-    try {
-      const resp = await opTimeout(fetch(r.mk(url), { cache: 'no-store' }), opt.ms || 13000, r.name + ' 超时');
-      if (!resp.ok) { errors.push(r.name + ':HTTP' + resp.status); continue; }
-      const text = await resp.text();
-      if (text && text.length > 500) return { html: text, via: r.name };
-      errors.push(r.name + ':内容过短');
-    } catch (e) { errors.push(r.name + ':' + (e.message || e)); }
+  const ms = opt.ms || 10000;
+  const attempts = OP_RELAYS.map(r => (async () => {
+    const resp = await opTimeout(fetch(r.mk(url), { cache: 'no-store' }), ms, r.name + ' 超时');
+    if (!resp.ok) throw new Error(r.name + ':HTTP' + resp.status);
+    const text = await resp.text();
+    if (!text || text.length < 500) throw new Error(r.name + ':内容过短');
+    return { html: text, via: r.name };
+  })());
+  if (typeof Promise.any === 'function') {
+    try { return await Promise.any(attempts); }
+    catch (e) { /* 落到下面收集错误 */ }
   }
+  const errors = [];
+  for (const a of attempts) { try { errors.push((await a).via + ':OK'); } catch (x) { errors.push(x.message); } }
   throw new Error('页面获取失败（' + errors.slice(0, 3).join('；') + '）');
 }
 

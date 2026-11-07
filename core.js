@@ -41,20 +41,21 @@ function withTimeout(p, ms, label) {
 const PROXY_TEXT = [
   { label: 'cors/workers', mk: u => 'https://test.cors.workers.dev/?' + u, bin: true },
   { label: 'allorigins/raw', mk: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), bin: true },
-  { label: 'codetabs', mk: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), bin: true },
+  { label: 'codetabs', mk: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), bin: true, noBan: true },
   { label: 'allorigins/get', wrap: async u => {
       const r = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(u));
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();
       return new Response((j && j.contents != null) ? String(j.contents) : '', { status: 200, headers: { 'Content-Type': (j && j.contentType) || 'text/plain; charset=utf-8' } });
-    } },
+    }, noBan: true },
   { label: 'cors/eu', mk: u => 'https://cors.eu.org/' + u, bin: true },
   { label: 'jina', mk: u => 'https://r.jina.ai/' + u, textOnly: true }, /* 快照文本,适合页面元数据 */
 ];
-/* 支持 POST 转发的通道（快手 GraphQL 用） */
+/* 支持 POST 转发的通道（快手 GraphQL 用）：
+ * cors/workers 是防备通道——不参与正常竞争、永不拉黑，普通通道全灭才启用 */
 const POST_PROXIES = [
-  { label: 'cors/workers', mk: u => 'https://test.cors.workers.dev/?' + u },
   { label: 'cors/lol', mk: u => 'https://api.cors.lol/?url=' + encodeURIComponent(u) },
+  { label: 'cors/workers', mk: u => 'https://test.cors.workers.dev/?' + u, noBan: true },
 ];
 /* 兼容旧名字（批量搬运等既有代码） */
 const TEXT_PROXIES = PROXY_TEXT;
@@ -126,7 +127,7 @@ async function probeChannels(chans, opt) {
   probeBusy = true;
   const ms = opt.ms || 5500;
   try {
-    await Promise.allSettled(chans.filter(c => c.mk && !c.wrap).map(async (c) => {
+    await Promise.allSettled(chans.filter(c => c.mk && !c.wrap && !c.noBan).map(async (c) => {
       const t0 = performance.now();
       try {
         const r = await withTimeout(fetch(c.mk(PROBE_TARGET)), ms, c.label + ' 探测超时');
@@ -144,8 +145,12 @@ async function raceFetch(chans, url, opt) {
   const ms = opt.ms || 20000;
   const cap = Math.max(1, opt.wave || 2);
   const pool = chans.filter(c => (opt.binary ? !c.textOnly : true));
-  let list = orderedChannels(pool.filter(c => !pxIsBanned(c.label)));
-  if (!list.length) list = orderedChannels(pool); /* 全被拉黑：解禁再赌一次 */
+  /* 防备通道：noBan 标记者永不被拉黑、永远缀在队尾（隐藏），
+   * 只有普通通道全部失效/阵亡时才会被派上场——这是最后的保险。 */
+  const guards = orderedChannels(pool.filter(c => !!c.noBan));
+  let normal = orderedChannels(pool.filter(c => !c.noBan && !pxIsBanned(c.label)));
+  if (!normal.length && !guards.length) normal = orderedChannels(pool.filter(c => !c.noBan)); /* 无防备时的兜底解禁 */
+  const list = normal.concat(guards);
   if (!list.length) throw new Error('没有可用通道');
   const errs = [];
   return await new Promise((resolve, reject) => {
@@ -173,8 +178,7 @@ async function raceFetch(chans, url, opt) {
             pxMarkOk(c.label);
             finish({ c, resp });
           } catch (e) {
-            pxPenalize(c.label);
-            pxMarkFail(c.label);
+            if (!c.noBan) { pxPenalize(c.label); pxMarkFail(c.label); }
             errs.push((e && e.message) || String(e));
           } finally {
             inFlight--;

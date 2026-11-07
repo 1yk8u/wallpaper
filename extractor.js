@@ -280,7 +280,7 @@ function showFailHelp(url) {
        <button class="btn ghost" id="fail-reset">♻️ 重置通道</button>
      </div>
      <p class="hint">小技巧：直接打开原链接后，手机长按画面 → 存储；电脑右键另存为。</p>
-     <p class="hint">【自家引擎重跑】会把链接重新交给仓库里自己写的解析引擎（GitHub Actions），通常 1~3 分钟出结果；结果是永久缓存，下次粘贴秒出。若提示风控/需登录，在自己电脑上跑 <code>node parser/cli.mjs "链接" --save</code> 最稳。</p>`;
+     <p class="hint">防拉黑机制：同平台 15 分钟内连续失败 3 次会自动冷却 10 分钟，期间不再去碰平台。短链跳登录页 = 链接已失效，请从 App 重新分享一条。稍等几分钟再重试，成功率更高。</p>`;
   $id('fail-open').onclick = () => window.open(url, '_blank', 'noopener');
   $id('fail-copy').onclick = () => copyText(url);
   $id('fail-own').onclick = () => { hideResult(); startExtract(); };
@@ -753,6 +753,28 @@ function memoSet(url, data) {
   } catch (err) { /* 存不下就算了 */ }
 }
 
+/* ---------- 防拉黑：平台连续失败自动冷却，绝不反复硬砸触发风控 ---------- */
+const PLAT_CD_KEY = 'wp_plat_cooldown_v1';
+function platCDLoad() { try { return JSON.parse(localStorage.getItem(PLAT_CD_KEY) || '{}'); } catch (e) { return {}; } }
+function platCDSave(d) { try { localStorage.setItem(PLAT_CD_KEY, JSON.stringify(d)); } catch (e) { /* ignore */ } }
+function platCooldownLeft(key) {
+  const e = platCDLoad()[key];
+  return e && e.until ? Math.max(0, e.until - Date.now()) : 0;
+}
+function platMarkFail(key) {
+  if (!key) return;
+  const d = platCDLoad();
+  const e = d[key] || { n: 0, at: 0 };
+  e.n = (Date.now() - e.at > 15 * 60e3) ? 1 : e.n + 1;   /* 15 分钟外的失败不累计 */
+  e.at = Date.now();
+  if (e.n >= 3) { e.until = Date.now() + 10 * 60e3; e.n = 0; }  /* 15 分钟内败 3 次 → 冷却 10 分钟 */
+  d[key] = e; platCDSave(d);
+}
+function platMarkOK(key) {
+  if (!key) return;
+  const d = platCDLoad(); delete d[key]; platCDSave(d);
+}
+
 /* ---------- 解析页一打开就给通道测速：用户点开始时最快通道已在队首 ---------- */
 let exProbed = false;
 function scheduleProbe() {
@@ -797,6 +819,10 @@ async function startExtract() {
     if (plat && plat.key === 'douyin' && /douyin\.com\/user\//i.test(url))
       throw new Error('抖音主页批量暂不支持，可以逐条粘贴视频/图集链接解析');
 
+    /* 1.1) 防拉黑冷却：这个平台刚连续失败过就先休息，绝不去硬砸 */
+    const cdMs = platCooldownLeft(plat ? plat.key : '');
+    if (cdMs > 0) throw new Error('「' + platName + '」刚才连续解析失败，为防被平台拉黑已自动冷却 ' + Math.ceil(cdMs / 1000) + ' 秒。请过几分钟再试，或直接打开原链接手动保存');
+
     /* 1.2) 先把派单发出去（后台跑）：仓库引擎和下面的浏览器端引擎同时开工，谁先出结果用谁 */
     const since = Date.now() - 60000;
     let dispatchErr = '';
@@ -804,24 +830,7 @@ async function startExtract() {
       .then(() => true)
       .catch(e => { dispatchErr = String((e && e.message) || e); return false; });
 
-    /* 1.5) 本地解析引擎优先：自己电脑的网络不会被平台风控，最快且最稳 */
-    if (ownEndpoint()) {
-      statusBusy('正在用你自己的本地解析引擎…');
-      try {
-        const data = await parseViaLocal(url, isProfile);
-        const r = normaliseResult(data);
-        if (r) {
-          showOwnResult(r, '本地引擎');
-          const note = r.kind === 'profile' ? ' · 抓到 ' + r.items.length + ' 个作品' : '';
-          setStatus('本地解析引擎完成' + note + (data.via ? ' · ' + data.via : '') + '，秒出', 'ok');
-          if (r.kind !== 'profile') memoSet(url, r);
-          return;
-        }
-      } catch (e) {
-        statusBusy('本地引擎没连上（' + String((e && e.message) || e) + '），改走仓库代抓…');
-        await sleep(600);
-      }
-    }
+    /* 1.5)（本地引擎通道已按需求移除，全部走网页端） */
 
     /* 1.7) 浏览器端自研引擎：自己抓页面自己剥 JSON 自己挖直链，不经过任何第三方解析接口 */
     if (plat && !isProfile) {
@@ -832,6 +841,7 @@ async function startExtract() {
           curResult = r;
           renderResult(r, { name: '自研引擎' });
           memoSet(url, r);
+          platMarkOK(plat.key);
           setStatus('✅ 自研引擎解析完成（' + (r.via || '浏览器端') + '）· 结果已缓存，下次秒出', 'ok');
           return;
         }
@@ -865,6 +875,7 @@ async function startExtract() {
     fastQuiet = true;  /* 被放弃的旧通道不许再抢状态栏 */
 
     if (fast && (fast.kind !== 'profile' || (fast.items && fast.items.length))) {
+      platMarkOK(plat ? plat.key : '');
       if (fast.kind === 'profile') {
         curResult = null; renderBatch(fast.items);
         setStatus('快速通道抓到 ' + fast.items.length + ' 个作品', 'ok');
@@ -887,13 +898,16 @@ async function startExtract() {
     const r = normaliseResult(data);
     if (!r) throw new Error('自家引擎返回了空结果');
     showOwnResult(r, '自家引擎');
+    platMarkOK(plat ? plat.key : '');
     const note = r.kind === 'profile' ? ' · 抓到 ' + r.items.length + ' 个作品' : '';
     setStatus('自家解析引擎完成' + note + (data.via ? ' · ' + data.via : '') + ' · 结果已缓存，下次粘贴秒出', 'ok');
     if (r.kind !== 'profile') memoSet(url, r);
     /* 入库仍由结果页按钮「存入壁纸库」显式触发 */
   } catch (e) {
     curResult = null;
-    setStatus('解析失败：' + String((e && e.message) || e), 'bad');
+    const msg = String((e && e.message) || e);
+    if (plat && !/自动冷却/.test(msg)) platMarkFail(plat.key);   /* 防拉黑：失败记账，连续 3 次触发冷却 */
+    setStatus('解析失败：' + msg, 'bad');
     showFailHelp(url);
   } finally {
     fastQuiet = false;
@@ -911,23 +925,6 @@ async function startExtract() {
 const OWN_CFG = () => (typeof WPGH !== 'undefined' && WPGH.cfg)
   ? WPGH.cfg
   : { owner: '1yk8u', repo: 'wallpaper', branch: 'main', pat: '' };
-
-/* 本地解析服务（node parser/serve.mjs），存在本机浏览器里，不上传 */
-const OWN_EP_KEY = 'wp_own_endpoint_v1';
-function ownEndpoint() {
-  try { return String(localStorage.getItem(OWN_EP_KEY) || '').trim().replace(/\/+$/, ''); }
-  catch (e) { return ''; }
-}
-async function parseViaLocal(url, isProfile) {
-  const ep = ownEndpoint();
-  if (!ep) return null;
-  const q = ep + '/parse?url=' + encodeURIComponent(url) + (isProfile ? '&profile=1' : '');
-  const r = await withTimeout(fetch(q, { cache: 'no-store' }), 45000, '本地引擎超时');
-  if (!r.ok) throw new Error('本地引擎 HTTP ' + r.status);
-  const j = await r.json();
-  if (!j || !j.ok) throw new Error((j && j.error && j.error.message) || '本地引擎没抓到内容');
-  return j.data;
-}
 
 async function ownHash(u) {
   try {
@@ -1060,7 +1057,7 @@ function showOwnResult(r, src) {
 
 /* ---------- UI 绑定 ---------- */
 const EX_HINTS = {
-  single: '自研解析引擎：粘贴后先由浏览器端引擎即时解析（秒级，自己抓页面自己解析），不行再自动派单仓库引擎代抓（1~3 分钟，结果永久缓存）',
+  single: '自研解析引擎：粘贴后浏览器端引擎即时解析（秒级），没抓到自动派仓库引擎代抓（1~3 分钟）。带防拉黑：连续失败自动冷却，别急着反复重试',
   batch: '批量搬运：粘贴快手个人主页链接（kuaishou.com/profile/xxx），自研引擎抓取该账号作品，可勾选下载或搬运入库',
 };
 
@@ -1104,38 +1101,6 @@ function initExtractor() {
   }));
   const li = $id('link-input');
   if (li) { li.addEventListener('focus', scheduleProbe); li.addEventListener('paste', scheduleProbe); }
-
-  /* 高级：本地解析引擎地址 */
-  const epInput = $id('own-endpoint'), epStatus = $id('own-endpoint-status');
-  if (epInput && epStatus) {
-    epInput.value = ownEndpoint();
-    const show = (text, kind) => {
-      epStatus.classList.remove('hidden');
-      epStatus.className = 'ex-status' + (kind ? ' ' + kind : '');
-      epStatus.textContent = text;
-    };
-    $id('btn-own-save').onclick = async () => {
-      let v = (epInput.value || '').trim().replace(/\/+$/, '');
-      if (v && !/^https?:\/\//i.test(v)) v = 'http://' + v;
-      try { if (v) localStorage.setItem(OWN_EP_KEY, v); else localStorage.removeItem(OWN_EP_KEY); } catch (e) { /* ignore */ }
-      epInput.value = v;
-      if (!v) { show('已清除，之后走仓库代抓'); return; }
-      show('正在测试连接…');
-      try {
-        const r = await withTimeout(fetch(v + '/health', { cache: 'no-store' }), 9000, '连接超时');
-        const j = await r.json().catch(() => ({}));
-        if (r.ok && j.ok) show('已连接：本地解析引擎 v' + (j.engine || '?') + '，之后解析优先走它', 'ok');
-        else show('地址没响应，确认已在电脑上执行 node parser/serve.mjs', 'bad');
-      } catch (e) {
-        show('连不上：' + String((e && e.message) || e) + '（HTTPS 页面访问本机 http 服务，Chrome/Edge 通常允许；手机请用仓库代抓）', 'bad');
-      }
-    };
-    $id('btn-own-clear').onclick = () => {
-      try { localStorage.removeItem(OWN_EP_KEY); } catch (e) { /* ignore */ }
-      epInput.value = '';
-      show('已清除，之后走仓库代抓');
-    };
-  }
 }
 
 initExtractor();

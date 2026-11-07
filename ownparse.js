@@ -264,11 +264,33 @@ const OP_ADAPTERS = {
   xiaohongshu: opXhs,
 };
 
-/** 浏览器端自研解析：成功返回统一结果，失败/不支持返回 null（由调用方继续走后续通道） */
+/* ---------- 防拉黑：同平台节流 + 失败退避 + 成功短期复用 ---------- */
+const OP_LAST_HIT = {};      /* 平台 -> 上次请求时间 */
+const OP_COOL = 4000;        /* 同平台两次抓取最少间隔 4 秒 */
+const OP_OK_MEMO = {};       /* url -> { at, r } 成功结果 10 分钟内直接复用，不再碰平台 */
+const OP_ERR_MEMO = {};      /* url -> { at }    刚失败的链接 3 分钟内不再去碰平台 */
+const OP_OK_TTL = 10 * 60e3, OP_ERR_TTL = 3 * 60e3;
+
+async function opPolite(key) {
+  const last = OP_LAST_HIT[key] || 0;
+  const wait = last + OP_COOL - Date.now();
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  OP_LAST_HIT[key] = Date.now();
+}
+
+/** 浏览器端自研解析：成功返回统一结果，失败/不支持/冷却中返回 null（由调用方继续走后续通道） */
 async function ownBrowserParse(url, plat) {
   const fn = plat && OP_ADAPTERS[plat.key];
   if (!fn) return null;
-  return await fn(url).catch(() => null);
+  const ok = OP_OK_MEMO[url];
+  if (ok && Date.now() - ok.at < OP_OK_TTL) return ok.r;
+  const err = OP_ERR_MEMO[url];
+  if (err && Date.now() - err.at < OP_ERR_TTL) return null;
+  await opPolite(plat.key);
+  const r = await fn(url).catch(() => null);
+  if (r) OP_OK_MEMO[url] = { at: Date.now(), r };
+  else OP_ERR_MEMO[url] = { at: Date.now() };
+  return r;
 }
 
 /* 供测试与调试 */

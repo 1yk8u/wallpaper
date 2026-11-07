@@ -88,8 +88,22 @@ function baseHeaders(mobile, extra) {
   };
 }
 
+/* ---- 防拉黑：同一站点两次请求最少间隔 1.2 秒，批量/重试不会连续硬砸同一平台 ---- */
+const LAST_HIT = new Map();
+const POLITE_GAP = 1200;
+async function politeGate(u) {
+  try {
+    const host = new URL(u).hostname;
+    const last = LAST_HIT.get(host) || 0;
+    const wait = last + POLITE_GAP - Date.now();
+    if (wait > 0 && wait < 8000) await new Promise(r => setTimeout(r, wait));
+    LAST_HIT.set(host, Date.now());
+  } catch (e) { /* URL 异常不拦路 */ }
+}
+
 export async function httpGet(url, opt = {}) {
   const ms = opt.timeout || 25000;
+  await politeGate(url);
   try {
     return await fetch(url, {
       method: opt.method || 'GET',

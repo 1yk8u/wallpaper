@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-07T13:18:33.722Z",
+  "updated": "2026-11-07T13:23:48.823Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -6914,6 +6914,12 @@
       "code": "STRUCT",
       "engine": "1.0.0",
       "ts": "2026-11-07T13:18:33.717Z"
+    },
+    "v.kuaishou.com/nimreufc": {
+      "err": "快手页面没有作品数据（可能是推荐页/风控页/短链已失效），换完整作品链接或在本地 CLI 里试",
+      "code": "RISK",
+      "engine": "1.0.0",
+      "ts": "2026-11-07T13:23:48.818Z"
     }
   },
   "engine": "1.0.0"

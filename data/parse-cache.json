@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-07T12:35:53.229Z",
+  "updated": "2026-11-07T12:45:26.149Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -6900,10 +6900,10 @@
       "ts": "2026-10-29T09:34:09.764Z"
     },
     "bilibili.com/video/bv1gj411x7h7": {
-      "err": "B 站 view 接口返回 code -412：request was banned",
+      "err": "B 站接口返回 code -404（啥都木有）。境外服务器 IP 常被拦，建议在自己电脑上用本地解析服务或 CLI",
       "code": "RISK",
       "engine": "1.0.0",
-      "ts": "2026-11-07T12:35:53.223Z"
+      "ts": "2026-11-07T12:45:26.144Z"
     }
   },
   "engine": "1.0.0"

@@ -3,8 +3,8 @@
   "ok": false,
   "error": {
     "code": "RISK",
-    "message": "B 站 view 接口返回 code -412：request was banned"
+    "message": "B 站接口返回 code -404（啥都木有）。境外服务器 IP 常被拦，建议在自己电脑上用本地解析服务或 CLI"
   },
   "engine": "1.0.0",
-  "ts": "2026-11-07T12:35:53.222Z"
+  "ts": "2026-11-07T12:45:26.143Z"
 }

@@ -1059,7 +1059,7 @@ function showOwnResult(r, src) {
 
 /* ---------- UI 绑定 ---------- */
 const EX_HINTS = {
-  single: '自研解析引擎：粘贴后浏览器端引擎即时解析（秒级），没抓到自动派仓库引擎代抓（1~3 分钟）。带防拉黑：连续失败自动冷却，别急着反复重试',
+  single: '哔哩哔哩：粘贴链接直接出。抖音/快手/小红书：用上面的「书签工具」（点分享→浏览器打开→点书签），直连原图原视频',
   batch: '批量搬运：粘贴快手个人主页链接（kuaishou.com/profile/xxx），自研引擎抓取该账号作品，可勾选下载或搬运入库',
 };
 
@@ -1111,6 +1111,7 @@ function initExtractor() {
     var q = new URLSearchParams(location.search);
     if (q.get('bm') !== '1') return;
     var v = q.get('v') || '', c = q.get('c') || '', t = q.get('t') || '';
+    var src = q.get('src') || '';
     var i = (q.get('i') || '').split('|').filter(Boolean);
     var r = null;
     if (v) r = { kind: 'video', play: v, title: t || '网页视频', cover: c };
@@ -1120,10 +1121,12 @@ function initExtractor() {
       try {
         var tab = document.querySelector('.tab[data-tab="extract"]');
         if (tab && !tab.classList.contains('active')) tab.click();
+        var li = document.getElementById('link-input');
+        if (li && src) li.value = src;
         curResult = r;
         renderResult(r, { name: '书签工具' });
-        setStatus('✅ 书签工具已拿到直链（' + (r.kind === 'video' ? '视频' : r.images.length + ' 张图') + '），可直接下载或存入壁纸库', 'ok');
-        memoSet(q.get('src') || location.href, r);
+        setStatus('✅ 书签工具已拿到直链（' + (r.kind === 'video' ? '视频 · ' + (r.via || '无水印') : r.images.length + ' 张图') + '），可直接下载或存入壁纸库', 'ok');
+        memoSet(src || location.href, r);
       } catch (e) { /* 静默 */ }
     }, 350);
   } catch (e) { /* 静默 */ }

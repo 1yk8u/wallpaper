@@ -142,9 +142,12 @@
         </summary>
         <p class="hint">2026 年起抖音/快手/小红书把视频数据锁进了登录态，网站后台抓不到。<b>书签工具</b>让解析引擎跑在平台自己的页面里（用你的登录态），点一下直接出无水印直链。</p>
         <div class="row paste-row">
-          <a id="bm-link" class="btn primary big" href="#">📑 把我拖到书签栏</a>
+          <a id="bm-link" class="btn primary big" href="#">📑 拖我到书签栏</a>
+          <button id="bm-copy" class="btn ghost big" type="button">📋 复制代码（手机用）</button>
         </div>
-        <p class="hint">用法：① 把左边按钮拖到浏览器书签栏；② 在抖音/快手/小红书里点分享 → 在浏览器打开；③ 图集先滑动浏览一遍（让图片都加载出来），再点书签栏里的「壁纸解析」→ 自动跳回本站出结果，可直接下载/存库。</p>
+        <p class="hint">电脑：把左边按钮拖到书签栏 → 在抖音/快手/小红书点分享 → 在浏览器打开 → 点书签栏里的「壁纸解析」。</p>
+        <p class="hint">手机：点「复制代码」→ 浏览器添加书签（名称随意）→ 编辑书签，把地址换成刚复制的代码 → 在 App 里分享到浏览器打开 → 点书签。</p>
+        <p class="hint">图集先在页面里滑动浏览一遍让图片都加载出来，再点书签；视频等画面开始播放再点。</p>
       </details>
 
       <details class="howto">
@@ -159,7 +162,7 @@
       <div id="ex-status" class="ex-status hidden"></div>
       <div id="ex-result" class="ex-result"></div>
 
-      <p class="fine">解析由本仓库自带的「自研解析引擎」完成：不依赖第三方解析接口、不需要本地软件。浏览器端引擎先自己抓页面自己解析（秒级）；没抓到再自动派给 GitHub Actions 代抓，结果写回仓库缓存永久保留。壁纸只作个人收藏用途，作品版权归原作者所有。</p>
+      <p class="fine">哔哩哔哩由本仓库自带的「自研解析引擎」直接解析；抖音/快手/小红书自 2026 年起数据锁进登录态，请用上面的「书签工具」（引擎跑在平台页面里、用你的登录态）拿直链。壁纸只作个人收藏用途，作品版权归原作者所有。</p>
     </div>
   </section>
 </main>
@@ -195,28 +198,65 @@
 <!-- ================= 书签工具：生成可拖拽的 bookmarklet ================= -->
 <script>
 (function () {
-  /* 在平台自己的页面里跑：读 <video> 真实播放地址 + 已加载的图片资源，带回本站 */
+  /* 解析引擎跑在平台自己的页面里（用你的登录态）：视频取 <video> 真实地址 + 资源计时里的播放地址，
+     图片取 <img> src/srcset + 背景图 url() + 已加载资源，过滤头像/logo 等 UI 图，带回本站出结果 */
   var code =
     "(function(){try{" +
-    "var V=document.querySelector('video');" +
-    "var o={v:'',c:'',i:[],t:(document.title||'').slice(0,60)};" +
-    "if(V){o.v=V.currentSrc||V.src||'';o.c=V.poster||'';}" +
-    "try{performance.getEntriesByType('resource').forEach(function(e){var n=e.name;" +
-    "if(/\\.(mp4|m3u8)(\\?|#|$)/i.test(n)&&!o.v)o.v=n;" +
-    "if(/\\.(jpe?g|png|webp|heic)(\\?|#|$)/i.test(n)&&o.i.length<40&&!/avatar|logo|icon|sprite|emoji/i.test(n)&&o.i.indexOf(n)<0)o.i.push(n);});}catch(e){}" +
-    "var im=[].slice.call(document.images).map(function(m){return m.currentSrc||m.src||''});" +
-    "im.forEach(function(u){if(u&&o.i.length<40&&/\\.(jpe?g|png|webp|heic)/i.test(u)&&!/avatar|logo|icon|sprite|emoji/i.test(u)&&o.i.indexOf(u)<0)o.i.push(u);});" +
-    "var q='?bm=1&src='+encodeURIComponent(location.href)+'&t='+encodeURIComponent(o.t)+'&v='+encodeURIComponent(o.v)+'&c='+encodeURIComponent(o.c)+'&i='+encodeURIComponent(o.i.join('|'));" +
+    "var R=location.href;" +
+    "var T=(document.title||'').replace(/\\s*[-_|·—]\\s*(抖音|快手|小红书| douyin| kuaishou|RED).*$/i,'').slice(0,80);" +
+    "var vid='',cov='',imgs=[],seen={};" +
+    "function add(u){if(!u||seen[u])return;if(/^data:/i.test(u))return;seen[u]=1;imgs.push(u);}" +
+    "function bad(u){return /avatar|logo|icon|sprite|emoji|badge|button|loading|placeholder|qrcode|beacon|report|feedback/i.test(u);}" +
+    "function isImg(u){return /\\.(jpe?g|png|webp|heic|avif|gif)(\\?|#|$)/i.test(u)||/(xhscdn|douyinpic|kwimgs|yximgs|snssdk|pstatp|byteimg|chenzhongtech|sns-webpic)/i.test(u);}" +
+    "function isVid(u){return /\\.(mp4|m3u8|flv)(\\?|#|$)/i.test(u)||/\\/aweme\\/v1\\/play\\//i.test(u)||/video_id=/i.test(u)||/sns-video/i.test(u);}" +
+    "var vs=document.querySelectorAll('video');" +
+    "for(var i=0;i<vs.length;i++){var v=vs[i];var u=v.currentSrc||v.src||'';" +
+    "if(u&&!/^blob:/i.test(u)&&isVid(u)&&!bad(u)){vid=u;if(v.poster)cov=v.poster;break;}" +
+    "if(v.poster&&!cov)cov=v.poster;}" +
+    "if(!vid){try{var es=performance.getEntriesByType('resource');" +
+    "for(var j=0;j<es.length;j++){var n=es[j].name;if(/^blob:/i.test(n))continue;" +
+    "if(isVid(n)&&!bad(n)){vid=n;break;}}}catch(e){}}" +
+    "var ims=document.images;" +
+    "for(var k=0;k<ims.length;k++){var m=ims[k];var s=m.currentSrc||m.src||'';" +
+    "if(s&&isImg(s)&&!bad(s))add(s);" +
+    "var ss=m.getAttribute&&m.getAttribute('srcset');" +
+    "if(ss){ss.split(',').forEach(function(p){var q=p.trim().split(/\\s+/)[0];if(q&&isImg(q)&&!bad(q))add(q);});}}" +
+    "if(!vid){try{var es2=performance.getEntriesByType('resource');" +
+    "for(var j2=0;j2<es2.length&&imgs.length<60;j2++){var n2=es2[j2].name;if(isImg(n2)&&!bad(n2))add(n2);}}catch(e){}}" +
+    "var els=document.querySelectorAll('[style*=\"background-image\"],[style*=\"background:url\"]');" +
+    "for(var e2=0;e2<els.length&&e2<4000;e2++){var st=els[e2].getAttribute('style')||'';" +
+    "var mm=st.match(/url\\([\"']?([^\"')]+)[\"']?\\)/);" +
+    "if(mm&&isImg(mm[1])&&!bad(mm[1]))add(mm[1]);}" +
+    "if(!vid&&!imgs.length){alert('壁纸解析：这个页面还没加载出媒体。\\n· 视频贴子：等画面开始播放再点书签\\n· 图集：先在页面里滑动浏览一遍让图都加载出来，再点书签');return;}" +
+    "var q='?bm=1&src='+encodeURIComponent(R)+'&t='+encodeURIComponent(T)+'&v='+encodeURIComponent(vid)+'&c='+encodeURIComponent(cov)+'&i='+encodeURIComponent(imgs.slice(0,40).join('|'));" +
     "location.href='https://1yk8u.github.io/wallpaper/'+q;" +
-    "}catch(e){alert('壁纸解析：这个页面没拿到媒体数据（' + e.message + '）')}})();";
+    "}catch(e){alert('壁纸解析失败：'+e.message)}})();";
   var a = document.getElementById('bm-link');
   if (a) { a.href = 'javascript:' + encodeURIComponent(code); a.title = '拖我到书签栏'; }
+  var cp = document.getElementById('bm-copy');
+  if (cp) {
+    cp.onclick = function () {
+      var url = 'javascript:' + encodeURIComponent(code);
+      var done = function () { if (typeof toast === 'function') toast('书签代码已复制，去浏览器添加书签并粘贴', 'ok'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done, function () { fallbackCopy(url); done(); });
+      } else { fallbackCopy(url); done(); }
+    };
+  }
+  function fallbackCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    } catch (e) { /* ignore */ }
+  }
 })();
 </script>
 
 <script src="core.js?v=20261107H"></script>
 <script src="app.js?v=20261101A"></script>
 <script src="ownparse.js?v=20261107D"></script>
-<script src="extractor.js?v=20261107L"></script>
+<script src="extractor.js?v=20261107M"></script>
 </body>
 </html>

@@ -280,7 +280,7 @@ function showFailHelp(url) {
        <button class="btn ghost" id="fail-reset">♻️ 重置通道</button>
      </div>
      <p class="hint">小技巧：直接打开原链接后，手机长按画面 → 存储；电脑右键另存为。</p>
-     <p class="hint">防拉黑机制：同平台 15 分钟内连续失败 3 次会自动冷却 10 分钟，期间不再去碰平台。短链跳登录页 = 链接已失效，请从 App 重新分享一条。稍等几分钟再重试，成功率更高。</p>`;
+     <p class="hint">抖音/快手/小红书 2026 年起把数据锁进登录态，后台抓不到是正常的——用页面上方的【📑 书签工具】：在浏览器打开分享页后点书签，100% 能拿到直链。B站和直链不受影响。防拉黑机制：同平台 15 分钟内连败 3 次自动冷却 10 分钟。</p>`;
   $id('fail-open').onclick = () => window.open(url, '_blank', 'noopener');
   $id('fail-copy').onclick = () => copyText(url);
   $id('fail-own').onclick = () => { hideResult(); startExtract(); };
@@ -1104,5 +1104,29 @@ function initExtractor() {
   const li = $id('link-input');
   if (li) { li.addEventListener('focus', scheduleProbe); li.addEventListener('paste', scheduleProbe); }
 }
+
+/* ---------- 书签工具回传：?bm=1&v=直链&i=图集 → 直接出结果 ---------- */
+(function () {
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.get('bm') !== '1') return;
+    var v = q.get('v') || '', c = q.get('c') || '', t = q.get('t') || '';
+    var i = (q.get('i') || '').split('|').filter(Boolean);
+    var r = null;
+    if (v) r = { kind: 'video', play: v, title: t || '网页视频', cover: c };
+    else if (i.length) r = { kind: 'images', images: i.slice(0, 30), title: t || '网页图集', cover: i[0] };
+    if (!r) return;
+    setTimeout(function () {
+      try {
+        var tab = document.querySelector('.tab[data-tab="extract"]');
+        if (tab && !tab.classList.contains('active')) tab.click();
+        curResult = r;
+        renderResult(r, { name: '书签工具' });
+        setStatus('✅ 书签工具已拿到直链（' + (r.kind === 'video' ? '视频' : r.images.length + ' 张图') + '），可直接下载或存入壁纸库', 'ok');
+        memoSet(q.get('src') || location.href, r);
+      } catch (e) { /* 静默 */ }
+    }, 350);
+  } catch (e) { /* 静默 */ }
+})();
 
 initExtractor();

@@ -138,6 +138,18 @@
       <details class="howto">
         <summary>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+          📑 书签工具（抖音/快手/小红书 100% 可用，零安装）
+        </summary>
+        <p class="hint">2026 年起抖音/快手/小红书把视频数据锁进了登录态，网站后台抓不到。<b>书签工具</b>让解析引擎跑在平台自己的页面里（用你的登录态），点一下直接出无水印直链。</p>
+        <div class="row paste-row">
+          <a id="bm-link" class="btn primary big" href="#">📑 把我拖到书签栏</a>
+        </div>
+        <p class="hint">用法：① 把左边按钮拖到浏览器书签栏；② 在抖音/快手/小红书里点分享 → 在浏览器打开；③ 图集先滑动浏览一遍（让图片都加载出来），再点书签栏里的「壁纸解析」→ 自动跳回本站出结果，可直接下载/存库。</p>
+      </details>
+
+      <details class="howto">
+        <summary>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
           解析总失败怎么办
         </summary>
         <p class="hint">平台对陌生访问有风控，短时间反复重试反而更容易被拉黑——本站已内置防拉黑：同平台自动节流、连续失败 3 次自动冷却 10 分钟。冷却期间请换条链接先玩，或过几分钟再试。</p>
@@ -180,9 +192,31 @@
 </div>
 
 <noscript><div class="file-banner">本站需要启用 JavaScript 才能使用。</div></noscript>
+<!-- ================= 书签工具：生成可拖拽的 bookmarklet ================= -->
+<script>
+(function () {
+  /* 在平台自己的页面里跑：读 <video> 真实播放地址 + 已加载的图片资源，带回本站 */
+  var code =
+    "(function(){try{" +
+    "var V=document.querySelector('video');" +
+    "var o={v:'',c:'',i:[],t:(document.title||'').slice(0,60)};" +
+    "if(V){o.v=V.currentSrc||V.src||'';o.c=V.poster||'';}" +
+    "try{performance.getEntriesByType('resource').forEach(function(e){var n=e.name;" +
+    "if(/\\.(mp4|m3u8)(\\?|#|$)/i.test(n)&&!o.v)o.v=n;" +
+    "if(/\\.(jpe?g|png|webp|heic)(\\?|#|$)/i.test(n)&&o.i.length<40&&!/avatar|logo|icon|sprite|emoji/i.test(n)&&o.i.indexOf(n)<0)o.i.push(n);});}catch(e){}" +
+    "var im=[].slice.call(document.images).map(function(m){return m.currentSrc||m.src||''});" +
+    "im.forEach(function(u){if(u&&o.i.length<40&&/\\.(jpe?g|png|webp|heic)/i.test(u)&&!/avatar|logo|icon|sprite|emoji/i.test(u)&&o.i.indexOf(u)<0)o.i.push(u);});" +
+    "var q='?bm=1&src='+encodeURIComponent(location.href)+'&t='+encodeURIComponent(o.t)+'&v='+encodeURIComponent(o.v)+'&c='+encodeURIComponent(o.c)+'&i='+encodeURIComponent(o.i.join('|'));" +
+    "location.href='https://1yk8u.github.io/wallpaper/'+q;" +
+    "}catch(e){alert('壁纸解析：这个页面没拿到媒体数据（' + e.message + '）')}})();";
+  var a = document.getElementById('bm-link');
+  if (a) { a.href = 'javascript:' + encodeURIComponent(code); a.title = '拖我到书签栏'; }
+})();
+</script>
+
 <script src="core.js?v=20261107H"></script>
 <script src="app.js?v=20261101A"></script>
 <script src="ownparse.js?v=20261107D"></script>
-<script src="extractor.js?v=20261107K"></script>
+<script src="extractor.js?v=20261107L"></script>
 </body>
 </html>

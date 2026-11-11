@@ -280,7 +280,7 @@ function showFailHelp(url) {
        <button class="btn ghost" id="fail-reset">♻️ 重置通道</button>
      </div>
      <p class="hint">小技巧：直接打开原链接后，手机长按画面 → 存储；电脑右键另存为。</p>
-     <p class="hint">抖音/快手/小红书 2026 年起把数据锁进登录态，后台抓不到是正常的——用页面上方的【📑 书签工具】：在浏览器打开分享页后点书签，100% 能拿到直链。B站和直链不受影响。防拉黑机制：同平台 15 分钟内连败 3 次自动冷却 10 分钟。</p>`;
+     <p class="hint">解析全自动：B站秒出；抖音/快手/小红书由仓库里的 GitHub Actions 开真实浏览器拿正片直链（首次约 30 秒~2 分钟，之后同一条链接永久缓存、秒出）。防拉黑机制：同平台连续失败 3 次自动冷却 10 分钟。</p>`;
   $id('fail-open').onclick = () => window.open(url, '_blank', 'noopener');
   $id('fail-copy').onclick = () => copyText(url);
   $id('fail-own').onclick = () => { hideResult(); startExtract(); };
@@ -825,84 +825,29 @@ async function startExtract() {
     const cdMs = platCooldownLeft(plat ? plat.key : '');
     if (cdMs > 0) throw new Error('「' + platName + '」刚才连续解析失败，为防被平台拉黑已自动冷却 ' + Math.ceil(cdMs / 1000) + ' 秒。请过几分钟再试，或直接打开原链接手动保存');
 
-    /* 1.2) 先把派单发出去（后台跑）：仓库引擎和下面的浏览器端引擎同时开工，谁先出结果用谁 */
-    const since = Date.now() - 60000;
-    let dispatchErr = '';
-    const dp = ownDispatch(url, { profile: isProfile })
-      .then(() => true)
-      .catch(e => { dispatchErr = String((e && e.message) || e); return false; });
-
-    /* 1.5)（本地引擎通道已按需求移除，全部走网页端） */
-
-    /* 1.7) 浏览器端自研引擎：自己抓页面自己剥 JSON 自己挖直链，不经过任何第三方解析接口 */
-    if (plat && !isProfile) {
-      statusBusy('自研引擎 · 浏览器端与仓库引擎同时解析中…');
-      try {
-        const r = await withTimeout(ownBrowserParse(url, plat), 30000, '浏览器端解析超时');
-        if (r && (r.play || (r.images && r.images.length))) {
-          curResult = r;
-          renderResult(r, { name: '自研引擎' });
-          memoSet(url, r);
-          platMarkOK(plat.key);
-          setStatus('✅ 自研引擎解析完成（' + (r.via || '浏览器端') + '）· 结果已缓存，下次秒出', 'ok');
-          return;
-        }
-        statusBusy('浏览器端没抓到这条（平台可能需要登录态），继续后续通道…');
-      } catch (e) {
-        statusBusy('浏览器端没抓到（' + String((e && e.message) || e) + '），继续后续通道…');
-      }
-      await sleep(400);
+    /* 1.2) 派单给仓库里的自研引擎（抖音/快手/小红书开真实浏览器渲染，B站调接口）
+           所有平台统一走这一条稳定通道；先查缓存命中即秒出，不命中才派单 */
+    const since = Date.now();
+    statusBusy('已交给仓库里的自研解析引擎（' + platName + '）解析中…');
+    let dispatched = false;
+    try {
+      dispatched = await ownDispatch(url, { profile: isProfile });
+    } catch (e) {
+      throw new Error(String((e && e.message) || e));
     }
+    if (!dispatched) throw new Error('派单失败：仓库令牌/仓库名不对，无法自动解析');
 
-    /* 2) 派单已在第 1.2 步提前发出，这里直接并行抢快速通道 */
-    statusBusy('已交给仓库里的自研解析引擎，同时试一条快速通道…');
-
-    /* 3) 快速通道：原来的平台解析函数，只给 14 秒，谁先出结果用谁 */
-    let fast = null;
-    if (plat) {
-      try {
-        const task = (async () => {
-          if (isProfile) {
-            const uid = ksProfileId(url);
-            if (!uid) return null;
-            return { kind: 'profile', items: await withTimeout(fetchKsProfileAll(uid), 14000), title: '快手主页' };
-          }
-          let finalURL = url;
-          if (plat.short) { try { finalURL = await withTimeout(resolveRedirect(url), 5000); } catch (e) { /* 用原链接 */ } }
-          return await plat.parse(finalURL, plat);
-        })();
-        fast = await Promise.race([task, sleep(14000).then(() => null)]);
-      } catch (e) { /* 快速通道失败不致命，自家引擎还在跑 */ }
-    }
-    fastQuiet = true;  /* 被放弃的旧通道不许再抢状态栏 */
-
-    if (fast && (fast.kind !== 'profile' || (fast.items && fast.items.length))) {
-      platMarkOK(plat ? plat.key : '');
-      if (fast.kind === 'profile') {
-        curResult = null; renderBatch(fast.items);
-        setStatus('快速通道抓到 ' + fast.items.length + ' 个作品', 'ok');
-      } else {
-        curResult = fast; renderResult(fast, plat);
-        memoSet(url, fast);
-        setStatus('快速通道解析完成 · ' + platName, 'ok');
-      }
-      return;
-    }
-
-    /* 4) 快速通道没出结果 → 等自家引擎写回轻量结果文件 */
-    const dispatched = await dp;
-    if (!dispatched) throw new Error(dispatchErr || '自家引擎派单失败');
-    statusBusy('自家引擎正在仓库里解析（GitHub Actions 排队约 1~3 分钟）…');
+    /* 1.3) 轮询结果：Actions 跑完会把结果写回 data/parsed/<hash>.json，前端实时读，不用刷新 */
     const data = await ownWait(url, {
-      since, timeoutMs: 360000,
-      onTick: (n) => statusBusy('自家引擎解析中（第 ' + n + ' 轮）· 结果会自动出现，不用刷新…'),
+      since, timeoutMs: 300000,
+      onTick: (n) => statusBusy('自研引擎解析中（第 ' + n + ' 轮）· 结果会自动出现，不用刷新…'),
     });
     const r = normaliseResult(data);
     if (!r) throw new Error('自家引擎返回了空结果');
     showOwnResult(r, '自家引擎');
     platMarkOK(plat ? plat.key : '');
     const note = r.kind === 'profile' ? ' · 抓到 ' + r.items.length + ' 个作品' : '';
-    setStatus('自家解析引擎完成' + note + (data.via ? ' · ' + data.via : '') + ' · 结果已缓存，下次粘贴秒出', 'ok');
+    setStatus('自研解析引擎完成' + note + (data.via ? ' · ' + data.via : '') + ' · 结果已缓存，下次粘贴秒出', 'ok');
     if (r.kind !== 'profile') memoSet(url, r);
     /* 入库仍由结果页按钮「存入壁纸库」显式触发 */
   } catch (e) {
@@ -1059,7 +1004,7 @@ function showOwnResult(r, src) {
 
 /* ---------- UI 绑定 ---------- */
 const EX_HINTS = {
-  single: '哔哩哔哩：粘贴链接直接出。抖音/快手/小红书：用上面的「书签工具」（点分享→浏览器打开→点书签），直连原图原视频',
+  single: 'B站粘贴即出；抖音/快手/小红书全自动代抓（约 30 秒~2 分钟，结果永久缓存，再粘秒出）',
   batch: '批量搬运：粘贴快手个人主页链接（kuaishou.com/profile/xxx），自研引擎抓取该账号作品，可勾选下载或搬运入库',
 };
 
@@ -1104,32 +1049,5 @@ function initExtractor() {
   const li = $id('link-input');
   if (li) { li.addEventListener('focus', scheduleProbe); li.addEventListener('paste', scheduleProbe); }
 }
-
-/* ---------- 书签工具回传：?bm=1&v=直链&i=图集 → 直接出结果 ---------- */
-(function () {
-  try {
-    var q = new URLSearchParams(location.search);
-    if (q.get('bm') !== '1') return;
-    var v = q.get('v') || '', c = q.get('c') || '', t = q.get('t') || '';
-    var src = q.get('src') || '';
-    var i = (q.get('i') || '').split('|').filter(Boolean);
-    var r = null;
-    if (v) r = { kind: 'video', play: v, title: t || '网页视频', cover: c };
-    else if (i.length) r = { kind: 'images', images: i.slice(0, 30), title: t || '网页图集', cover: i[0] };
-    if (!r) return;
-    setTimeout(function () {
-      try {
-        var tab = document.querySelector('.tab[data-tab="extract"]');
-        if (tab && !tab.classList.contains('active')) tab.click();
-        var li = document.getElementById('link-input');
-        if (li && src) li.value = src;
-        curResult = r;
-        renderResult(r, { name: '书签工具' });
-        setStatus('✅ 书签工具已拿到直链（' + (r.kind === 'video' ? '视频 · ' + (r.via || '无水印') : r.images.length + ' 张图') + '），可直接下载或存入壁纸库', 'ok');
-        memoSet(src || location.href, r);
-      } catch (e) { /* 静默 */ }
-    }, 350);
-  } catch (e) { /* 静默 */ }
-})();
 
 initExtractor();

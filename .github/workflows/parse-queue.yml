@@ -26,7 +26,7 @@ concurrency:
 jobs:
   parse:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,10 +37,17 @@ jobs:
         with:
           node-version: '20'
 
+      # 装依赖 + 真实浏览器（抖音/快手/小红书走渲染引擎，必须有 Chromium）
+      - name: 安装依赖与浏览器
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
       - name: 跑自研解析引擎
         env:
           PARSE_URLS: ${{ github.event.client_payload.urls || inputs.urls }}
           PARSE_PROFILE: ${{ (github.event.client_payload.profile || inputs.profile) && '1' || '0' }}
+          PARSE_COOKIES: ${{ secrets.PARSE_COOKIES }}
         run: node parser/relay.mjs
 
       - name: 提交解析结果

@@ -41,13 +41,16 @@ function isVideoURL(u) {
 }
 
 /* 图片 CDN 白名单 + UI 图过滤 */
-const IMG_HOST = /xhscdn|douyinpic|yximgs|kwimgs|snssdk|pstatp|byteimg|chenzhongtech|sns-webpic/i;
+const IMG_HOST = /xhscdn|douyinpic|yximgs|kwimgs|snssdk|pstatp|byteimg|chenzhongtech|sns-webpic|p3-pc-sign|p26-pc-sign|p9-pc-sign|videostatic/i;
 const IMG_EXT = /\.(jpe?g|png|webp|heic|avif|gif)(\?|#|$)/i;
-const IMG_UI = /avatar|uhead|logo|icon|sprite|emoji|badge|qrcode|beacon|report|feedback|loading|placeholder|twemoji|emblem/i;
+const IMG_UI = /avatar|uhead|logo|icon|sprite|emoji|badge|qrcode|beacon|report|feedback|loading|placeholder|twemoji|emblem|get_app|fold_get|hover|btn|bg_|nav|tab|banner/i;
+/* 抖音/快手 PC 端的界面素材（下载按钮、图标等），.png 后缀但绝非作品内容 */
+const IMG_ASSET = /douyinstatic\.com\/obj\/douyin-pc-web|kuaishou-static|ks-img|kwai-static|static\d*\.?/i;
 
 function isImageURL(u) {
   if (!u || /^blob:|^data:/i.test(u)) return false;
   if (IMG_UI.test(u)) return false;
+  if (IMG_ASSET.test(u)) return false;
   return IMG_HOST.test(u) || IMG_EXT.test(u);
 }
 
@@ -144,9 +147,29 @@ export async function renderParse(url, opt = {}) {
         if (cs.length) await ctx.addCookies(cs).catch(() => {});
       }
       const page = await ctx.newPage();
-      const netVids = [], netImgs = [];
-      page.on('response', (res) => {
+      const netVids = [], netImgs = [], playApiURLs = [];
+      page.on('response', async (res) => {
         const u = res.url();
+        try {
+          /* 抖音 aweme/v1/play 接口返回的 JSON 里带最高画质直链（url_list），
+             这是平台"亲手"给的、可直连的 canonical 地址，优先采用 */
+          if (/aweme\/v1\/play|video\/play|play\?|play_addr/i.test(u) && !/static\.|\.js|effect|sound/.test(u)) {
+            const j = await res.json().catch(() => null);
+            if (j) {
+              const lists = [];
+              const walk = (o) => {
+                if (!o || typeof o !== 'object') return;
+                if (Array.isArray(o)) { o.forEach(walk); return; }
+                for (const k in o) {
+                  if (k === 'url_list' && Array.isArray(o[k])) lists.push(...o[k]);
+                  else if (typeof o[k] === 'object') walk(o[k]);
+                }
+              };
+              walk(j);
+              lists.forEach(x => { if (x && !playApiURLs.includes(x)) playApiURLs.push(x); });
+            }
+          }
+        } catch (e) { /* 非 JSON 体，忽略 */ }
         if (isVideoURL(u)) netVids.push(u);
         else if (isImageURL(u)) netImgs.push(u);
       });
@@ -154,8 +177,15 @@ export async function renderParse(url, opt = {}) {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: opt.timeout || 45000 })
         .catch(e => { lastErr = '打开页面失败：' + String(e.message || e).slice(0, 80); });
 
+      /* 拟人操作：随机移动鼠标 + 轻滚，降低无头浏览器被风控识别的概率 */
+      try {
+        await page.mouse.move(180 + Math.random() * 420, 160 + Math.random() * 320);
+        await page.evaluate(() => { try { window.scrollBy(0, 100 + Math.random() * 120); } catch (e) {} });
+        await sleep(300 + Math.random() * 500);
+      } catch (e) { /* 导航中，忽略 */ }
+
       let domV = '', poster = '', title = '', domImgs = [];
-      const deadline = Date.now() + (opt.wait || 40000);
+      const deadline = Date.now() + (opt.wait || 45000);
       while (Date.now() < deadline) {
         /* 快手风控页会出现「点击重试」按钮，模拟真实用户点掉 */
         try {
@@ -164,36 +194,71 @@ export async function renderParse(url, opt = {}) {
         } catch (e) { /* 页面导航中，忽略 */ }
         try {
           const d = await page.evaluate(() => {
+            /* headless 下 video 不会自动起播，真实 CDN 直链就不会进网络请求——主动静音播放 */
             const vs = [].slice.call(document.querySelectorAll('video'));
             const v = vs.find(x => x.currentSrc && !/^blob:/i.test(x.currentSrc)) || vs[0];
+            if (v) { try { v.muted = true; v.preload = 'auto'; v.play().catch(() => {}); } catch (e) {} }
+            const sources = [];
+            vs.forEach(x => {
+              if (x.currentSrc && !/^blob:/i.test(x.currentSrc)) sources.push(x.currentSrc);
+              if (x.src && !/^blob:/i.test(x.src)) sources.push(x.src);
+              [].slice.call(x.querySelectorAll('source')).forEach(s => s.src && sources.push(s.src));
+            });
             const imgs = [];
             [].slice.call(document.images).forEach(m => { const s = m.currentSrc || m.src; if (s) imgs.push(s); });
             document.querySelectorAll('[style*="background-image"]').forEach(el => {
               const mm = (el.getAttribute('style') || '').match(/url\(["']?([^"')]+)["']?\)/);
               if (mm) imgs.push(mm[1]);
             });
+            /* 资源计时里可能已有真实播放地址（比 DOM 更可靠） */
+            let perfVid = '';
+            try {
+              performance.getEntriesByType('resource').forEach(e => {
+                const n = e.name;
+                if (!perfVid && /douyinvod|djvod|ndcimgs|yximgs|kwimgs|chenzhongtech|aweme\/v1\/play|video_id=|\.(mp4|m3u8|flv)(\?|#|$)/i.test(n) && !/static\.|kcdn|\.js/.test(n)) perfVid = n;
+              });
+            } catch (e) {}
+            /* 标题多源兜底：og:title → h1 → 官方文案节点 → description → 页面标题 */
+            const og = (document.querySelector('meta[property="og:title"]') || {}).content || '';
+            const desc = (document.querySelector('meta[name="description"]') || {}).content || '';
+            const h1 = (document.querySelector('h1') || {}).innerText || '';
+            const e2e = (document.querySelector('[data-e2e="video-title"]') || document.querySelector('.caption') || {}).innerText || '';
+            const rawT = og || h1 || e2e || desc || document.title || '';
+            const t = rawT.replace(/\s*[-_|·—]\s*(抖音|快手|小红书|douyin\.com|kuaishou\.com|xiaohongshu\.com).*$/i, '').trim()
+              || rawT.replace(/\s*[-_|·—]\s*(抖音|快手|小红书)\s*$/i, '').trim();
+            /* 风控页检测：出现验证/滑块/人机则这一轮基本拿不到媒体，尽早换指纹重试 */
+            const bodyText = (document.body && document.body.innerText) || '';
+            const risk = /验证|拖动滑块|slide.{0,4}verify|security check|人机|验证码|unusual traffic|robot|请完成|verify you are human/i.test(bodyText)
+              || /verify|验证|安全验证/i.test(document.title);
             return {
               v: v ? (v.currentSrc || v.src || '') : '',
+              sources, perfVid,
               p: v ? (v.poster || '') : '',
-              t: document.title || '',
+              t,
               imgs,
+              risk,
             };
           });
-          domV = d.v; poster = d.p; title = d.t; domImgs = d.imgs;
+          domV = d.v || d.perfVid || (d.sources.find(isVideoURL) || '');
+          d.sources.forEach(s => { if (!netVids.includes(s)) netVids.push(s); });
+          poster = d.p; title = d.t; domImgs = d.imgs;
         } catch (e) { /* 页面跳转销毁上下文，下一轮再来 */ }
 
         const hasVid = isVideoURL(domV) || netVids.length > 0;
-        const hasImgs = wantImages && (domImgs.filter(isImageURL).length >= 2 || netImgs.length >= 3);
+        const hasImgs = domImgs.filter(isImageURL).length >= 3 || netImgs.length >= 4;
         if (hasVid || hasImgs) break;
-        await sleep(600);
+        /* 风控验证页基本拿不到媒体，别空等一轮，直接换指纹重试 */
+        if (typeof d !== 'undefined' && d.risk) { lastErr = '页面触发风控验证，换指纹重试'; break; }
+        await sleep(700);
       }
 
       /* 汇总候选，按可信度排序 */
       const vidCands = [];
-      if (isVideoURL(domV)) vidCands.push(domV);
-      const hostScore = (u) => (/douyinvod/.test(u) ? 4 : /djvod|ndcimgs/.test(u) ? 3 : /yximgs|kwimgs|chenzhongtech/.test(u) ? 2 : /aweme\/v1\/play|video_id=/.test(u) ? 1 : 0);
-      netVids.sort((a, b) => hostScore(b) - hostScore(a));
-      vidCands.push(...netVids);
+      /* 优先采用播放接口给的 canonical 直链（最高画质），再退回到 DOM/网络捕获到的地址 */
+      const allVids = [...playApiURLs, ...(isVideoURL(domV) ? [domV] : []), ...netVids];
+      const hostScore = (u) => (/douyinvod/.test(u) ? 5 : /lf-douyin-pc-web/.test(u) ? 4 : /djvod|ndcimgs/.test(u) ? 3 : /yximgs|kwimgs|chenzhongtech/.test(u) ? 2 : /aweme\/v1\/play|video_id=/.test(u) ? 1 : 0);
+      allVids.sort((a, b) => hostScore(b) - hostScore(a));
+      [...new Set(allVids)].forEach(u => { if (u) vidCands.push(u); });
       const play = vidCands.find(Boolean) || '';
 
       const imgCands = [...domImgs, ...netImgs].filter(isImageURL);
@@ -204,7 +269,7 @@ export async function renderParse(url, opt = {}) {
       if (play) {
         return { kind: 'video', play, title: cleanTitle(title), cover: poster || images[0] || '', via: '渲染引擎' };
       }
-      if (images.length >= 2) {
+      if (images.length >= 3) {
         return { kind: 'images', images, title: cleanTitle(title), cover: images[0], via: '渲染引擎' };
       }
       lastErr = '页面没加载出媒体（可能触发风控或需要登录）';

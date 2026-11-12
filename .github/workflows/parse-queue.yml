@@ -40,10 +40,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 安装依赖
+      - name: 安装依赖与浏览器
         env:
           PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
-        run: npm install --no-audit --no-fund
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install chromium
 
       - name: 跑自研解析引擎
         env:

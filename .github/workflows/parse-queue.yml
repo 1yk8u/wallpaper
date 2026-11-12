@@ -25,7 +25,10 @@ concurrency:
 
 jobs:
   parse:
+    # 用官方 Playwright 镜像：Chromium + 全部运行库已预装，不需要 apt（避免 runner 偶发 DNS 装不上依赖）
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:jammy
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -37,17 +40,21 @@ jobs:
         with:
           node-version: '20'
 
-      # 装依赖 + 真实浏览器（抖音/快手/小红书走渲染引擎，必须有 Chromium）
+      # 装依赖；浏览器直接用镜像里预编译好的 Chromium（仅按需补齐二进制，不碰 apt）
       - name: 安装依赖与浏览器
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
         run: |
           npm install --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
 
       - name: 跑自研解析引擎
         env:
           PARSE_URLS: ${{ github.event.client_payload.urls || inputs.urls }}
           PARSE_PROFILE: ${{ (github.event.client_payload.profile || inputs.profile) && '1' || '0' }}
           PARSE_COOKIES: ${{ secrets.PARSE_COOKIES }}
+          PARSE_PROXY: ${{ secrets.PARSE_PROXY }}
+          PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
         run: node parser/relay.mjs
 
       - name: 提交解析结果

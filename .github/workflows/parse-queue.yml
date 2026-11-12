@@ -58,9 +58,14 @@ jobs:
         run: node parser/relay.mjs
 
       - name: 提交解析结果
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "parse-engine-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # 容器里要把令牌写进 remote URL，否则 git push 无凭据（exit 128）
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/1yk8u/wallpaper.git"
           git add data/parsed data/parse-cache.json
           if git diff --cached --quiet; then
             echo "没有新结果，跳过提交"

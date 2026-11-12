@@ -1,0 +1,10 @@
+{
+  "key": "kuaishou.com/short-video/3xnru3636armtzi",
+  "ok": false,
+  "error": {
+    "code": "UNKNOWN",
+    "message": "渲染引擎未拿到直链：browserType.launch: Executable doesn't exist at /ms-playwright/chromium_headless_shell-1254/chrome-headless-shell-linux6"
+  },
+  "engine": "1.0.0",
+  "ts": "2026-11-12T13:20:50.168Z"
+}

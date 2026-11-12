@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-12T13:20:50.172Z",
+  "updated": "2026-11-12T13:31:15.999Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -6936,38 +6936,24 @@
     "douyin.com/video/7640539094375909881": {
       "kind": "images",
       "images": [
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/get_app.beb4a83a0d39bb5d.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/get_app_hover.c9e81f511d248ae7.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/fold_get_app.795ee19b3ececa6b.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/fold_get_app_hover.911c3dd97d692c11.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/jxWeakBtnBg.b27e25d68aab9de7.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/jxWeakBtnLightBg.fe56ca1b49c54af0.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/jxWeakBtnHoverBg.3e19a3a05f191ca0.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/jxWeakBtnHoverLightBg.e31ce72d119a7941.png",
         "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/c7085f453e58f78fe403594d0bab6890.png",
-        "https://lf-ucenter-web.yhgfb-cn-static.com/obj/passport-fe/flat_bg_2_small.avif",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/nav_dark_entry_optimize_v6.bdfe9c5fdade7925.png",
         "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/a795fb49bcbcf8cb1c762a69d57aee48.png",
         "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/bdms_1.0.1.19_fix.js",
-        "https://p3-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/a795fb49bcbcf8cb1c762a69d57aee48.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/download-guide-white.a67d76c8dd5f466c.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/download-guide-black-mac.39c897ecb6f17a34.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/download-guide-white-mac.5397a163113e62b6.png",
-        "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/download-guide-black.bf2b8ad8a44c81ce.png"
+        "https://p3-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/a795fb49bcbcf8cb1c762a69d57aee48.png"
       ],
       "play": "",
-      "cover": "https://lf-douyin-pc-web.douyinstatic.com/obj/douyin-pc-web/ies/douyin_web/media/get_app.beb4a83a0d39bb5d.png",
+      "cover": "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/c7085f453e58f78fe403594d0bab6890.png",
       "title": "网页作品",
       "via": "渲染引擎",
       "platform": "douyin",
       "engine": "1.0.0",
-      "ts": "2026-11-11T13:31:29.105Z"
+      "ts": "2026-11-12T13:25:58.224Z"
     },
     "kuaishou.com/short-video/3xnru3636armtzi": {
-      "err": "渲染引擎未拿到直链：browserType.launch: Executable doesn't exist at /ms-playwright/chromium_headless_shell-1254/chrome-headless-shell-linux6",
+      "err": "渲染引擎未拿到直链：页面没加载出媒体（可能触发风控或需要登录）",
       "code": "UNKNOWN",
       "engine": "1.0.0",
-      "ts": "2026-11-12T13:20:50.168Z"
+      "ts": "2026-11-12T13:31:15.992Z"
     }
   },
   "engine": "1.0.0"

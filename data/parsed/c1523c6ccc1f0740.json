@@ -3,8 +3,8 @@
   "ok": false,
   "error": {
     "code": "UNKNOWN",
-    "message": "渲染引擎未拿到直链：browserType.launch: Executable doesn't exist at /ms-playwright/chromium_headless_shell-1254/chrome-headless-shell-linux6"
+    "message": "渲染引擎未拿到直链：页面没加载出媒体（可能触发风控或需要登录）"
   },
   "engine": "1.0.0",
-  "ts": "2026-11-12T13:20:50.168Z"
+  "ts": "2026-11-12T13:31:15.992Z"
 }

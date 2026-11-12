@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-12T13:31:15.999Z",
+  "updated": "2026-11-12T14:19:43.937Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -6954,6 +6954,22 @@
       "code": "UNKNOWN",
       "engine": "1.0.0",
       "ts": "2026-11-12T13:31:15.992Z"
+    },
+    "v.douyin.com/aorjaimh-pu": {
+      "kind": "images",
+      "images": [
+        "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/c7085f453e58f78fe403594d0bab6890.png",
+        "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/a795fb49bcbcf8cb1c762a69d57aee48.png",
+        "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/bdms_1.0.1.19_fix.js",
+        "https://p3-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/a795fb49bcbcf8cb1c762a69d57aee48.png"
+      ],
+      "play": "",
+      "cover": "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/c7085f453e58f78fe403594d0bab6890.png",
+      "title": "于20261112发布在抖音，已经收获了0个喜欢，来抖音，记录美好生活！",
+      "via": "渲染引擎",
+      "platform": "douyin",
+      "engine": "1.0.0",
+      "ts": "2026-11-12T14:19:43.933Z"
     }
   },
   "engine": "1.0.0"

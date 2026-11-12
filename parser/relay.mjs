@@ -114,7 +114,7 @@ for (const raw of urls) {
     writeCache(key, '', entry);
     okN++;
     const n = r.kind === 'profile' ? (r.items?.length || 0) : (r.images?.length || 1);
-    console.log(`  OK ${r.kind} ×${n} · ${r.via}`);
+    console.log(`  OK ${plat.name} ${r.kind} ×${n} · ${r.via}`);
     lines.push(`| OK | ${r.platformName} | ${n} | ${r.via} |`);
   } catch (e) {
     const error = { code: e.code || 'UNKNOWN', message: String(e.message || e).slice(0, 200) };

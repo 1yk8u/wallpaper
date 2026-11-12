@@ -69,11 +69,14 @@ async function launchBrowser(chromium, attempt) {
     '--lang=zh-CN',
     '--disable-dev-shm-usage',
   ];
+  /* 可选代理（CN IP 出口）绕过抖音/小红书对境外 IP 的风控；留空则直连 */
+  const proxy = process.env.PARSE_PROXY ? { server: process.env.PARSE_PROXY } : undefined;
+  const base = { args, ...(proxy ? { proxy } : {}) };
   /* 优先用本机 Edge（免下载、CN IP 最稳）；没有再退回 Playwright 自带 Chromium（CI 用） */
   try {
-    return await chromium.launch({ channel: 'msedge', args });
+    return await chromium.launch({ channel: 'msedge', ...base });
   } catch (e) {
-    return await chromium.launch({ args });
+    return await chromium.launch(base);
   }
 }
 

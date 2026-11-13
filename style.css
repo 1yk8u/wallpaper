@@ -443,3 +443,14 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);transition:background-
   border-top:3px solid rgba(92,122,68,.55);
 }
 #onboard .ob-card{border-radius:20px;overflow:hidden}
+
+/* ===== 付费/额度徽章 ===== */
+.quota-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 12px;border-radius:20px;border:1.5px solid rgba(92,122,68,.35);
+  background:rgba(255,255,255,.7);backdrop-filter:blur(8px);
+  font-size:12px;font-weight:600;color:#557a3c;cursor:pointer;
+  transition:all .2s;white-space:nowrap;
+}
+.quota-badge:hover{background:rgba(255,255,255,.95);border-color:#557a3c;transform:translateY(-1px)}
+.quota-badge span{font-size:11px}

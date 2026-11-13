@@ -1,0 +1,51 @@
+# 壁纸站 Netlify 配置
+# 后端：普通 Netlify Functions（可用 Deploy API 直传，不走 build）
+#   /.netlify/functions/pay    支付下单 / 回调 / 到账查询
+#   /.netlify/functions/music  网易云 / QQ音乐 / 酷狗 / 汽水音乐 分享链接解析
+#   /.netlify/functions/api    解析引擎 / 跨域代理
+# 图片与解析数据透明代理到 GitHub 仓库（永远最新）
+
+# ===== 代理 data/（解析结果、缓存、订单）→ GitHub raw =====
+[[redirects]]
+  from = "/data/*"
+  to = "https://raw.githubusercontent.com/1yk8u/wallpaper/main/data/:splat"
+  status = 200
+  force = true
+
+# ===== 代理 thumbs/（缩略图）→ GitHub raw =====
+[[redirects]]
+  from = "/thumbs/*"
+  to = "https://raw.githubusercontent.com/1yk8u/wallpaper/main/thumbs/:splat"
+  status = 200
+  force = true
+
+# ===== 代理 wallpapers/（壁纸大图）→ GitHub raw =====
+[[redirects]]
+  from = "/wallpapers/*"
+  to = "https://raw.githubusercontent.com/1yk8u/wallpaper/main/wallpapers/:splat"
+  status = 200
+  force = true
+
+# ===== 静态资源长缓存（首屏提速）=====
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/thumbs/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800, s-maxage=604800"
+
+[[headers]]
+  for = "/wallpapers/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800, s-maxage=604800"
+
+# ===== 安全头 =====
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

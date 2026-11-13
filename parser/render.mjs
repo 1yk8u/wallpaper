@@ -69,15 +69,26 @@ async function launchBrowser(chromium, attempt) {
     '--lang=zh-CN',
     '--disable-dev-shm-usage',
   ];
-  /* 可选代理（CN IP 出口）绕过抖音/小红书对境外 IP 的风控；留空则直连 */
-  const proxy = process.env.PARSE_PROXY ? { server: process.env.PARSE_PROXY } : undefined;
-  const base = { args, ...(proxy ? { proxy } : {}) };
-  /* 优先用本机 Edge（免下载、CN IP 最稳）；没有再退回 Playwright 自带 Chromium（CI 用） */
-  try {
-    return await chromium.launch({ channel: 'msedge', ...base });
-  } catch (e) {
-    return await chromium.launch(base);
+  /* 可选代理（CN IP 出口）绕过抖音/小红书对境外 IP 的风控；留空则直连。
+     支持 http://user:pass@host:port / socks5://host:port 等形式，凭据自动拆出 */
+  let proxy;
+  const pp = process.env.PARSE_PROXY;
+  if (pp) {
+    proxy = { server: pp };
+    const m = String(pp).match(/^(https?|socks5):\/\/(?:([^:@\/]+):([^@\/]*)@)?(.+)$/);
+    if (m && m[2] != null) {
+      proxy = { server: m[1] + '://' + m[4], username: m[2], password: m[3] || '' };
+    }
   }
+  const base = { args, ...(proxy ? { proxy } : {}) };
+  /* 优先用本机 Edge（免下载、CN IP 最稳）；没有再退回 Playwright 自带 Chromium（CI 用）
+     FORCE_CHROMIUM=1 时强制用自带 Chromium（用于隔离「IP 还是浏览器」的变量） */
+  if (!process.env.FORCE_CHROMIUM) {
+    try {
+      return await chromium.launch({ channel: 'msedge', ...base });
+    } catch (e) { /* 无 Edge，继续用自带 Chromium */ }
+  }
+  return await chromium.launch(base);
 }
 
 async function newFingerprint(browser, attempt) {

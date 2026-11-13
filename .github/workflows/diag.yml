@@ -27,4 +27,10 @@ jobs:
         env:
           DY_ID: ${{ github.event.client_payload.dy_id || inputs.dy_id || '7640539094375909881' }}
           KS_ID: ${{ github.event.client_payload.ks_id || '' }}
-        run: node parser/diag.mjs
+        run: |
+          node parser/diag.mjs
+          echo ""
+          echo "========================================="
+          echo "以下是深挖诊断（页面数据结构分析）"
+          echo "========================================="
+          node parser/diag2.mjs

@@ -274,6 +274,20 @@ async function downloadViaBlob(url, filename) {
 }
 
 async function downloadSmart(url, filename) {
+  /* 付费配额检查 */
+  if (typeof Payment !== 'undefined') {
+    if (!Payment.canDownload()) {
+      toast('今日下载额度已用完（' + Payment.getDailyLimit() + ' 张）', 'warn');
+      Payment.showPaymentModal();
+      return false;
+    }
+    Payment.consumeDownload();
+    const rem = Payment.getRemaining();
+    if (rem !== Infinity && rem <= 10 && rem > 0) {
+      toast('今日剩余 ' + rem + ' 张', 'warn');
+    }
+    if (typeof Payment.updateQuotaDisplay === 'function') Payment.updateQuotaDisplay();
+  }
   toast('↓️ 开始下载…');
   try {
     const ok = await downloadViaBlob(url, filename);

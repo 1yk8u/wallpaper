@@ -91,69 +91,74 @@
     </div>
   </section>
 
-  <!-- ================= 解析 / 批量搬运 ================= -->
+  <!-- ================= 解析工具（第三方） ================= -->
   <section id="tab-extract" class="page">
     <div class="card ex-card">
       <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg>
-        视频 / 图片 / 音乐提取器
+        解析工具
       </h2>
-
-      <div class="plat-strip" id="plat-strip"></div>
-
-      <div class="ex-mode-row">
-        <div class="seg small" id="ex-mode" data-active="0">
-          <span class="seg-thumb" aria-hidden="true"></span>
-          <button class="exmb" role="tab" data-extmode="single">单个作品</button>
-          <button class="exmb" role="tab" data-extmode="batch">主页批量搬运</button>
-        </div>
-      </div>
-      <p class="ex-hint" id="ex-hint"></p>
+      <p class="ex-hint">粘贴分享链接 → 选一个工具，秒开解析（本站不再跑云端引擎，不用等）</p>
 
       <div class="row paste-row">
-        <input id="link-input" type="text" placeholder="把链接粘贴到这里…" enterkeyhint="go" autocomplete="off" spellcheck="false">
+        <input id="ph-link" type="text" placeholder="把抖音 / 快手 / B站 / 小红书 / TikTok / YouTube 链接粘到这里…" enterkeyhint="go" autocomplete="off" spellcheck="false">
       </div>
       <div class="row paste-row">
-        <button id="btn-paste" class="btn primary big">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="4.5" width="11" height="16" rx="3"/><path d="M9.8 4.5V3.6c0-.6.5-1.1 1.1-1.1h2c.6 0 1.1.5 1.1 1.1v.9"/><path d="M9.5 11.5h5M9.5 15h5"/></svg>
-          快捷粘贴 · 自动开始
+        <button id="ph-paste" class="btn primary big">快捷粘贴</button>
+        <button id="ph-clear" class="btn ghost big">清空</button>
+      </div>
+
+      <div id="ph-detected" class="ph-detected">等待粘贴链接…</div>
+
+      <div class="ph-tools">
+        <button class="ph-tool ph-vtool" id="ph-vtool" type="button">
+          <span class="ph-logo">V</span>
+          <span class="ph-txt"><b>vtool.tv</b><small>21 个平台 · 视频 / 图集 / 批量</small></span>
+          <span class="ph-go">去解析 ↗</span>
         </button>
-        <button id="btn-parse" class="btn ghost big">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4L19 12z"/></svg>
-          开始解析
-        </button>
-        <button id="btn-clear" class="btn ghost big">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
-          清空
+        <button class="ph-tool ph-hello" id="ph-hello" type="button">
+          <span class="ph-logo">H</span>
+          <span class="ph-txt"><b>HelloTik</b><small>免费不限次 · 免登录 · 极速</small></span>
+          <span class="ph-go">去解析 ↗</span>
         </button>
       </div>
+
+      <div id="ph-msg" class="ph-msg hidden"></div>
 
       <details class="howto">
         <summary>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
-          怎么拿链接？（点开看教程）
+          怎么用？（点开看教程）
         </summary>
         <ol>
-          <li>在抖音 / 快手 / B站 / 小红书 App 里，点视频右下角 <b>分享</b>，选 <b>复制链接</b>；</li>
-          <li>音乐：在网易云 / QQ音乐 / 酷狗 / 汽水音乐里点 <b>分享 → 复制链接</b>，粘贴后会直接出歌曲卡片；</li>
-          <li>回到本页点 <b>快捷粘贴</b> 按钮，会自动粘贴并开始解析。</li>
+          <li>在 App / 网页里点 <b>分享 → 复制链接</b>；</li>
+          <li>回到本页点 <b>快捷粘贴</b>，或手动粘进输入框；</li>
+          <li>点 <b>vtool.tv</b> 或 <b>HelloTik</b>：工具会在新窗口打开，链接已自动复制到剪贴板，粘贴即可解析。</li>
         </ol>
-        <p class="hint">批量搬运：切换到「主页批量搬运」，粘贴快手账号主页链接（形如 kuaishou.com/profile/xxx），抓取后可勾选下载或存入你的壁纸库。</p>
+        <p class="hint">vtool.tv 覆盖抖音 / 快手 / 小红书 / B站 / TikTok / YouTube 等 21 个平台；HelloTik 免费不限次、免登录，B站 / 快手 / 小红书有专属页。两个站点都不允许被嵌入其它网页，所以只能新窗口打开。</p>
       </details>
 
-      <details class="howto">
-        <summary>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
-          解析总失败怎么办
-        </summary>
-        <p class="hint">平台对陌生访问有风控，短时间反复重试反而更容易被拉黑——本站已内置防拉黑：同平台自动节流、连续失败 3 次自动冷却 10 分钟。冷却期间请换条链接先玩，或过几分钟再试。</p>
-        <p class="hint">短链打不开/跳登录页 = 链接已失效，重新从 App 里分享一条新的即可。</p>
-      </details>
+      <p class="fine">视频 / 图片解析已移除自研引擎与 GitHub Actions 云端代抓，由上述第三方站点完成。音乐解析为本页自研的轻量实现。下载与版权请遵守对应平台规则，作品版权归原作者所有。</p>
+    </div>
 
-      <div id="ex-status" class="ex-status hidden"></div>
-      <div id="ex-result" class="ex-result"></div>
-
-      <p class="fine">解析由本仓库自带的「自研解析引擎」完成，不依赖任何第三方解析接口：B站直接调公开接口，抖音/快手/小红书用真实浏览器渲染（GitHub Actions 代跑）拿到直链。粘贴链接后约 30 秒~2 分钟出结果，结果永久缓存，之后同一条链接秒出。壁纸只作个人收藏用途，作品版权归原作者所有。</p>
+    <!-- ===== 自研音乐解析（纯前端，四平台） ===== -->
+    <div class="card ex-card">
+      <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
+        音乐解析 · 自研
+      </h2>
+      <p class="ex-hint">粘贴分享链接或整段分享口令，本地立即出歌曲卡片，不用等云端</p>
+      <div class="mu-plats" id="mu-plats"></div>
+      <div class="row paste-row">
+        <input id="mu-link" type="text" placeholder="粘贴汽水音乐 / 网易云 / QQ音乐 / 酷狗的分享链接…" enterkeyhint="go" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="row paste-row">
+        <button id="mu-paste" class="btn primary big">快捷粘贴 · 自动解析</button>
+        <button id="mu-go" class="btn ghost big">解析</button>
+        <button id="mu-test" class="btn ghost big">四平台自测</button>
+      </div>
+      <div id="mu-result" class="mu-result hidden"></div>
+      <p class="fine">点上方平台图标可填入示例链接；点「四平台自测」会一次跑完四家并给出通过结果。网易云提供公开直链，可直接播放/下载；其余平台提供官方跳转（平台未开放直链，不做假链接）。</p>
     </div>
   </section>
 </main>
@@ -190,8 +195,8 @@
 
 <script src="core.js?v=20261107H"></script>
 <script src="app.js?v=20261101A"></script>
-<script src="music.js?v=20261113A"></script>
-<script src="extractor.js?v=20261113B"></script>
+<script src="parsehub.js?v=20261113A"></script>
+<script src="music.js?v=20261113C"></script>
 <script src="payment.js?v=20261113B"></script>
 </body>
 </html>

@@ -37,6 +37,10 @@
     <span>壁纸库</span>
   </div>
   <div class="top-actions">
+      <button id="btn-quota" class="quota-badge" title="下载额度" onclick="Payment.showPaymentModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:14px;height:14px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <span data-quota-display>今日 --/100</span>
+      </button>
       <button id="btn-refresh" class="icon-btn" title="刷新壁纸列表" aria-label="刷新">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>
       </button>
@@ -185,5 +189,6 @@
 <script src="core.js?v=20261107H"></script>
 <script src="app.js?v=20261101A"></script>
 <script src="extractor.js?v=20261111A"></script>
+<script src="payment.js?v=20261113A"></script>
 </body>
 </html>

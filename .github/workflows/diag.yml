@@ -1,0 +1,30 @@
+name: 解析通道诊断
+
+on:
+  workflow_dispatch:
+    inputs:
+      dy_id:
+        description: '抖音视频/图集 ID'
+        required: false
+        default: '7640539094375909881'
+  repository_dispatch:
+    types: [parse-diag]
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 运行通道诊断
+        env:
+          DY_ID: ${{ github.event.client_payload.dy_id || inputs.dy_id || '7640539094375909881' }}
+          KS_ID: ${{ github.event.client_payload.ks_id || '' }}
+        run: node parser/diag.mjs

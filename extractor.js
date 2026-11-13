@@ -1022,7 +1022,7 @@ function showOwnResult(r, src) {
 
 /* ---------- UI 绑定 ---------- */
 const EX_HINTS = {
-  single: 'B站粘贴即出；抖音/快手/小红书全自动代抓（约 30 秒~2 分钟，结果永久缓存，再粘秒出）',
+  single: 'B站粘贴即出；抖音/快手/小红书全自动代抓（约 30 秒~2 分钟，结果永久缓存，再粘秒出）；网易云/QQ音乐/酷狗/汽水音乐分享链接直接出歌曲卡片',
   batch: '批量搬运：粘贴快手个人主页链接（kuaishou.com/profile/xxx），自研引擎抓取该账号作品，可勾选下载或搬运入库',
 };
 
@@ -1032,7 +1032,7 @@ function setExMode(mode) {
   $$('.exmb', seg).forEach(b => b.classList.toggle('active', b.dataset.extmode === mode));
   $id('link-input').placeholder = mode === 'batch'
     ? '粘贴快手主页链接，如 kuaishou.com/profile/xxx…'
-    : '把抖音 / 快手 / B站 / 小红书 的链接粘贴到这里…';
+    : '把抖音 / 快手 / B站 / 小红书 / 网易云 / QQ音乐 / 酷狗 / 汽水音乐 链接粘贴到这里…';
   $id('ex-hint').textContent = EX_HINTS[mode] || EX_HINTS.single;
 }
 

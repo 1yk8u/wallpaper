@@ -793,6 +793,24 @@ async function startExtract() {
   const url = extractURL($id('link-input').value);
   if (!url) { toast('没有识别到链接，先粘贴再点开始哦', 'warn'); return; }
 
+  /* 0') 音乐分享链接：网易云 / QQ音乐 / 酷狗 / 汽水 → 独立音乐解析通道 */
+  if (window.Music && Music.isMusicLink(url)) {
+    exBusy = true;
+    hideResult();
+    try {
+      await Music.run(url);
+    } catch (e) {
+      setStatus('解析失败：' + esc(e.message || e), 'bad');
+      const box = $id('ex-result');
+      box.classList.remove('hidden');
+      box.insertAdjacentHTML('beforeend',
+        '<div class="ex-actions"><button class="btn" id="mu-fail-open">↗ 打开原链接</button></div>' +
+        '<p class="hint">音乐平台若链接失效或需要登录，请重新从 App 里复制一条新的分享链接。</p>');
+      const b = $id('mu-fail-open'); if (b) b.onclick = () => window.open(url, '_blank', 'noopener');
+    } finally { exBusy = false; }
+    return;
+  }
+
   const plat = detectPlatform(url);
   const isProfile = !!(plat && plat.key === 'kuaishou' && /\/profile\//.test(url));
   const platName = plat ? plat.name : '通用网页';

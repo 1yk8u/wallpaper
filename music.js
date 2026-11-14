@@ -274,16 +274,37 @@ const Music = (() => {
     });
   }
 
-  /* 网易云 JSON 接口无 CORS → 走 core.js 的多通道代理竞速 */
+  /* 网易云 JSON 接口无 CORS。优先走实测稳定的单通道（更快、不惊动多通道竞速），
+   * 失败再回退到 core.js 的 fetchJSONSmart 多通道代理。 */
   async function neJSON(path, ms) {
+    ms = ms || 9000;
+    const full = NE + path;
+    try {
+      const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(full), { signal: AbortSignal.timeout(ms) });
+      if (r.ok) {
+        const j = await r.json();
+        if (j && (j.result || j.songs || j.data)) return j;
+      }
+    } catch (e) { /* 落到多通道 */ }
     if (typeof fetchJSONSmart !== 'function') return null;
-    ms = ms || 8000;
     try {
       return await Promise.race([
-        fetchJSONSmart(NE + path, { ms }),
+        fetchJSONSmart(full, { ms }),
         new Promise(r => setTimeout(() => r(null), ms + 600)),
       ]);
     } catch (e) { return null; }
+  }
+
+  /* 相同歌名只发一次搜索：四平台自测里 QQ 与酷狗都是《海阔天空》，避免打爆代理 */
+  const inflight = {};
+  function searchNeId(q) {
+    if (inflight[q]) return inflight[q];
+    inflight[q] = (async () => {
+      const d = await neJSON('/api/search/get?type=1&s=' + encodeURIComponent(q) + '&limit=5', 11000);
+      const list = (d && d.result && d.result.songs) || [];
+      return list.length ? String(list[0].id) : '';
+    })().then(v => { delete inflight[q]; return v; }, () => { delete inflight[q]; return ''; });
+    return inflight[q];
   }
 
   async function resolveNeId(s) {
@@ -292,11 +313,8 @@ const Music = (() => {
     if (!q) return '';
     const hit = cachedId(q);
     if (hit) return hit;
-    const d = await neJSON('/api/search/get?type=1&s=' + encodeURIComponent(q) + '&limit=5', 8000);
-    const list = (d && d.result && d.result.songs) || [];
-    if (!list.length) return '';
-    const id = String(list[0].id);
-    cacheId(q, id);
+    const id = await searchNeId(q);
+    if (id) cacheId(q, id);
     return id;
   }
 
@@ -387,6 +405,9 @@ const Music = (() => {
     if (head) head.insertAdjacentElement('afterend', line);
     /* 自测不预取整首音频（省 40MB 流量），但真发一次请求验证直链可达 */
     Promise.all(songs.map(s => enrich(s, box, { prefetch: false }))).then(async () => {
+      /* 代理偶发抖动 → 对没拿到直链的卡片再试一次 */
+      const bad = songs.filter(s => !s.audio);
+      if (bad.length) await Promise.all(bad.map(s => enrich(s, box, { prefetch: false })));
       const ready = songs.filter(s => !!s.audio).length;
       let probe = '';
       try {

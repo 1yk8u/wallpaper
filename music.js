@@ -1,76 +1,47 @@
 /* =====================================================================
- * music.js —— 自研音乐解析工具 v3（纯前端、零后端、可真下载）
+ * music.js —— 自研音乐解析 v4（网易云 + 汽水音乐）
  *
- * 支持：汽水音乐 / 网易云音乐 分享链接
- * 输出：平台彩色图标 + 每首歌音符图标 + 歌名/歌手/封面 + 播放器 + 一键下载
- *
- * 下载链路（实测通过，浏览器直接拿到完整 MP3 blob）：
- *   ① 本地识别链接 → 平台 + ID + 歌名（毫秒级出卡片，绝不转圈）
- *   ② 网易云链接直接用 ID；汽水用歌名走网易云公开搜索匹配同名曲
- *      （搜索接口无 CORS，走 core.js 的 fetchJSONSmart 多通道代理竞速）
- *   ③ 公开 Meting 端点 type=url&site=netease&id=… → 302 到 https CDN，
- *      全程 Access-Control-Allow-Origin:*，前端 fetch 拿到 audio/mpeg blob
- *   ④ <a download> 保存为「歌名 - 歌手.mp3」；两个端点自动互为备份
- *
- * 说明：汽水官方未开放直链（页面风控），因此下载的是「网易云同名版本」，
- *      界面会明确标注，不冒充原平台文件。
- *      版权归各平台及权利人所有，仅用于个人试听收藏。
+ * 原则：零第三方服务。
+ *   ① 本地识别：分享链接/口令 → 平台 + ID + 歌名（毫秒级出卡片）
+ *   ② 播放/下载直链：网易云自家 outer 端点（music.163.com 自己的接口）
+ *   ③ 元数据（歌名/歌手/封面）与汽水匹配：走自家仓库中转
+ *      （repository_dispatch → GitHub Actions 调平台官方接口 → parse-cache）
+ *   ④ 存入壁纸库：WPGH 仓库直连，永久保存进「音乐」分类
  * ===================================================================== */
 'use strict';
 
 const Music = (() => {
   const NOTE = '<path d="M9 17.5V6.4l9-2V15.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.4" cy="17.6" r="2.6" fill="currentColor"/><circle cx="15.4" cy="15.6" r="2.6" fill="currentColor"/>';
-  const svg = (cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${NOTE}</svg>`;
-
-  /* 公开 Meting 端点：返回 302 → https CDN，且带 ACAO:*，浏览器可直取 blob */
-  const METING = [
-    'https://api.qijieya.cn/meting/',
-    'https://api.injahow.cn/meting/',
-  ];
+  const svg = () => `<svg viewBox="0 0 24 24" aria-hidden="true">${NOTE}</svg>`;
   const NE = 'https://music.163.com';
-  const ID_CACHE = 'wp_music_neid_v1';
 
   const PLATS = [
     { key: 'netease', name: '网易云音乐', short: '网易云', color: '#e60026',
       test: /(?:music\.)?163\.com|163cn\.tv/i,
       glyph: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".5"/>',
-      idRe: /(?:song[/=]|\bid=|songId=)(\d{5,14})/i,
-      page: id => 'https://music.163.com/#/song?id=' + id },
+      idRe: /(?:song[/=]|\bid=|songId=)(\d{5,14})/i },
     { key: 'qishui', name: '汽水音乐', short: '汽水', color: '#00b8bf',
-      test: /qishui\.douyin\.com|music\.douyin\.com|qishui\.com/i,
+      test: /qishui\.douyin\.com|music\.douyin\.com/i,
       glyph: '<path d="M4 15c2-3 4-3 6 0s4 3 6 0 3-2 4-1" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/>',
-      idRe: /(?:song\/|music_id=|\bid=)(\d{6,20})/i,
-      page: () => 'https://qishui.douyin.com/' },
+      idRe: /(?:song\/|music_id=|\bid=)(\d{6,20})/i },
   ];
 
   const DEMOS = [
-    { key: 'netease', url: 'https://music.163.com/song?id=33894312', text: '分享《情非得已》给你 - 群星' },
-    { key: 'qishui',  url: 'https://qishui.douyin.com/song/7351234567890123456', text: '汽水音乐 分享《起风了》给你' },
+    { key: 'netease', url: 'https://music.163.com/song?id=186016', text: '分享《晴天》给你 - 周杰伦' },
+    { key: 'qishui', url: 'https://qishui.douyin.com/song/7351234567890123456', text: '汽水音乐 分享《起风了》给你' },
   ];
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const metingURL = (id, i) => METING[i || 0] + '?type=url&site=netease&id=' + encodeURIComponent(id);
+
+  const outerURL = id => NE + '/song/media/outer/url?id=' + encodeURIComponent(id) + '.mp3';
   const safeName = s => (String(s.title || 'song') + (s.artist && !/官方|打开原曲/.test(s.artist) ? ' - ' + s.artist : ''))
     .replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) + '.mp3';
 
-  /* ===== ID 匹配缓存（第二次解析同一首歌秒出，不再打代理） ===== */
-  function idCache() { try { return JSON.parse(localStorage.getItem(ID_CACHE) || '{}'); } catch (e) { return {}; } }
-  function cacheId(q, id) {
-    const c = idCache(); c[q.toLowerCase()] = { id, at: Date.now() };
-    try { localStorage.setItem(ID_CACHE, JSON.stringify(c)); } catch (e) {}
-  }
-  function cachedId(q) {
-    const e = idCache()[String(q || '').toLowerCase()];
-    return (e && Date.now() - e.at < 7 * 864e5) ? e.id : '';
-  }
-
   function detect(text) { return PLATS.find(p => p.test.test(String(text || ''))) || null; }
-  function brand(p, size) { return `<span class="mu-brand" style="--mc:${p.color};--ms:${size || 22}px">${svg('')}${p.glyph}</span>`; }
-  function extractURL(t) {
-    const m = String(t || '').match(/https?:\/\/[^\s"'<>，。、）)]+/i);
-    return m ? m[0] : '';
+  function brand(p, size) {
+    return `<span class="mu-brand" style="--mc:${p.color};--ms:${size || 22}px">${svg()}${p.glyph}</span>`;
   }
   function guessText(t) {
     const s = String(t || '');
@@ -84,198 +55,124 @@ const Music = (() => {
     }
     return { title, artist };
   }
-  /* 生成搜索词：去掉平台前缀和占位文案 */
-  function queryOf(s) {
-    const junk = /点「打开原曲」|官方收听|分享歌曲|音乐|网易云|QQ|酷狗|汽水|给你|来自/g;
-    const t = String(s.title || '').replace(junk, '').trim();
-    const a = String(s.artist || '').replace(junk, '').trim();
-    if (!t || /^\w{8,}$/.test(t) && !s.id) return '';
-    return (t + (a ? ' ' + a : '')).slice(0, 60);
-  }
 
-  /* ===== 核心：分享链接/口令 → 歌曲（纯本地，毫秒级） ===== */
+  /* ===== 本地识别（毫秒级，无网络） ===== */
   function parse(raw) {
-    const url = extractURL(raw);
     const p = detect(raw) || PLATS[0];
     const m = String(raw || '').match(p.idRe);
     const id = m ? m[1] : '';
     const g = guessText(raw);
-    const home = { netease: 'https://music.163.com', qishui: 'https://qishui.douyin.com' }[p.key];
     const s = {
       platform: p.key, platformName: p.name, color: p.color, id,
       title: g.title || (id ? p.short + ' · 歌曲 ' + id.slice(0, 12) : p.name + ' 分享歌曲'),
-      artist: g.artist || '点「打开原曲」在官方收听',
+      artist: g.artist || '',
       album: '', cover: '',
-      neId: '', audio: '', audioAlt: '', matched: false,
-      page: url || home, url: url || '',
+      audio: '', matched: false,
+      page: (String(raw).match(/https?:\/\/[^\s"'<>]+/) || [])[0] || '',
+      url: raw,
     };
-    if (id && p.key !== 'qishui') s.page = p.page(id);
-
-    /* 网易云链接 / 缓存命中 → 卡片一出来就有可播可下的直链，零等待 */
-    let neId = (p.key === 'netease' && /^\d{4,14}$/.test(id)) ? id : '';
-    if (!neId) { const q = queryOf(s); if (q) neId = cachedId(q); }
-    if (neId) {
-      s.neId = neId;
-      s.audio = metingURL(neId, 0);
-      s.audioAlt = metingURL(neId, 1);
-      s.matched = p.key !== 'netease';
-    }
+    if (p.key === 'netease' && /^\d{4,14}$/.test(id)) s.audio = outerURL(id);
     return s;
   }
 
-  function card(s) {
-    const media = s.audio
-      ? `<audio controls preload="none" src="${esc(s.audio)}"></audio>
-         ${s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : ''}`
-      : '<span class="mu-noaudio">正在获取可下载音频…</span>';
-    return `<div class="mu-item" style="--mc:${s.color}">
-      <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg('')}</span></div>
-      <div class="mu-info">
-        <div class="mu-title"><span class="mu-note-sm">${svg('')}</span>${esc(s.title)}</div>
-        <div class="mu-artist">${esc(s.artist)}${s.album ? ' · ' + esc(s.album) : ''}</div>
-        <div class="mu-media">${media}</div>
-      </div>
-      <div class="mu-actions">
-        <button type="button" class="mu-btn-dl" ${s.audio ? '' : 'disabled'}>下载音乐</button>
-        <button type="button" class="mu-btn-vid">下载视频</button>
-        <button type="button" class="mu-btn-save" ${s.audio ? '' : 'disabled'}>存到壁纸库</button>
-        <button type="button" class="mu-btn-open">打开原曲</button>
-      </div>
-    </div>`;
+  /* ===== 与自家仓库对账：缓存有就补全，没有就寄单代抓 ===== */
+  async function enrich(s, row, noteEl) {
+    const key = (s.platform === 'netease' && s.id) ? 'netease:' + s.id
+      : (s.platform === 'qishui' && s.id) ? 'qishui:' + s.id
+      : (typeof parseCacheKey === 'function' ? parseCacheKey(s.url) : '');
+    if (!key || typeof serverCacheGet !== 'function') return;
+    try {
+      let e = await serverCacheGet(key);
+      const fresh = e && !e.err && e.kind === 'music';
+      if (!fresh) {
+        if (typeof relayDispatch !== 'function') return;
+        if (noteEl) noteEl.textContent = '寄给自家仓库取元数据…';
+        const since = Date.now();
+        await relayDispatch(s.url, key);
+        e = await relayPoll(key, since, (i, sec) => { if (noteEl) noteEl.textContent = '仓库取元数据… ' + sec + 's'; });
+      }
+      if (e && e.kind === 'music' && !e.err) applyMeta(s, e, row);
+      else if (noteEl) noteEl.textContent = '元数据没取到，可点「打开原曲」';
+    } catch (err) {
+      if (noteEl) noteEl.textContent = '元数据获取失败（不影响本地已识别的信息）';
+    }
   }
 
-  /* 后台静默预取：拿到完整 MP3 后，播放器与下载都走本地 blob。
-   * 卡片本身不等它（毫秒级先渲染），1~2 秒后播放/下载都变成零等待。 */
-  async function prefetch(s, row) {
-    if (!s.audio || s.blobUrl || s._fetching) return;
-    s._fetching = true;
-    for (const u of [s.audio, s.audioAlt]) {
-      if (!u) continue;
-      try {
-        const r = await fetch(u, { signal: AbortSignal.timeout(45000) });
-        if (!r.ok) continue;
-        const blob = await r.blob();
-        if (!blob || blob.size < 20000) continue;
-        s.blobUrl = URL.createObjectURL(blob);
-        s.blobSize = blob.size;
-        const a = row && row.querySelector('audio');
-        if (a) { a.src = s.blobUrl; a.load(); }
-        const btn = row && row.querySelector('.mu-btn-dl');
-        if (btn) btn.title = '音频已就绪，点击立即保存';
-        break;
-      } catch (e) { /* 换备用端点 */ }
-    }
-    s._fetching = false;
-    if (!s.blobUrl && row) {
-      const m = row.querySelector('.mu-media');
-      if (m && !m.querySelector('.mu-nodl')) {
-        const tip = document.createElement('span');
-        tip.className = 'mu-match mu-nodl';
-        tip.textContent = '该曲可能受版权限制，若下载失败请点「打开原曲」';
-        m.appendChild(tip);
+  function applyMeta(s, e, row) {
+    s.title = e.title || s.title;
+    s.artist = e.artist || s.artist;
+    s.album = e.album || s.album;
+    s.cover = e.cover || s.cover;
+    if (e.audio) s.audio = e.audio;
+    s.matched = !!e.matched;
+    if (!row) return;
+    const ti = row.querySelector('.mu-title');
+    if (ti) ti.innerHTML = '<span class="mu-note-sm">' + svg() + '</span>' + esc(s.title);
+    const ar = row.querySelector('.mu-artist');
+    if (ar) ar.textContent = [s.artist, s.album].filter(Boolean).join(' · ') || ' ';
+    if (s.cover) {
+      const cv = row.querySelector('.mu-cover');
+      if (cv && !cv.querySelector('img')) {
+        cv.classList.add('has-img');
+        cv.insertAdjacentHTML('afterbegin', '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">');
       }
     }
+    const media = row.querySelector('.mu-media');
+    if (media && s.audio) {
+      media.innerHTML = `<audio controls preload="none" src="${esc(s.audio)}"></audio>` +
+        (s.matched ? '<span class="mu-match">汽水未开放直链 · 已匹配网易云同名版本</span>' : '');
+      const btn = row.querySelector('.mu-btn-dl');
+      if (btn) { btn.disabled = false; btn.onclick = () => download(s, btn); }
+      const sv = row.querySelector('.mu-btn-save');
+      if (sv) sv.disabled = false;
+    } else if (media && !s.audio) {
+      media.innerHTML = '<span class="mu-noaudio">没有可下载直链 · 点「打开原曲」收听</span>';
+    }
+    const note = row.querySelector('.mu-enrich');
+    if (note) note.textContent = s.matched ? '元数据已就绪（汽水 → 网易云同名匹配）' : '元数据已就绪';
   }
 
-  function attachAudioFallback(row, s) {
-    const a = row && row.querySelector('audio');
-    if (!a || !s.audioAlt) return;
-    a.addEventListener('error', () => {
-      if (a.dataset.alt || s.blobUrl) return;
-      a.dataset.alt = '1'; a.src = s.audioAlt; a.load();
-    });
-  }
-
-  /* ===== 一键下载：真·把完整 MP3 存到手机 ===== */
-  async function download(s, btn) {
-    if (!s.audio) return;
-    const name = safeName(s);
-    const old = btn.textContent;
-    btn.disabled = true; btn.textContent = s.blobUrl ? '保存中…' : '获取中…';
-    /* 预取已完成 → 直接保存，点击即完成 */
-    if (s.blobUrl) {
-      const a = document.createElement('a');
-      a.href = s.blobUrl; a.download = name;
-      document.body.appendChild(a); a.click(); a.remove();
-      btn.textContent = '已保存';
-      setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
-      return;
-    }
-    const urls = [s.audio, s.audioAlt, s.neId ? NE + '/song/media/outer/url?id=' + s.neId + '.mp3' : ''];
-    for (const u of urls) {
-      if (!u) continue;
-      try {
-        const r = await fetch(u, { signal: AbortSignal.timeout(60000) });
-        if (!r.ok) continue;
-        const blob = await r.blob();
-        if (!blob || blob.size < 20000) continue;   // 太小 = 错误页，不算音频
-        s.blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = s.blobUrl; a.download = name;
-        document.body.appendChild(a); a.click(); a.remove();
-        /* 下载完的音频顺手给播放器，之后离线也能播 */
-        const au = btn.closest('.mu-item') && btn.closest('.mu-item').querySelector('audio');
-        if (au) { au.src = s.blobUrl; au.load(); }
-        btn.textContent = '已保存';
-        setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
-        return;
-      } catch (e) { /* 换下一个端点 */ }
-    }
-    /* 全部失败：打开音频页，手机可长按保存 */
-    window.open(s.audio || s.page, '_blank', 'noopener');
-    btn.textContent = '长按保存';
-    setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 4500);
-  }
-
-  /* ===== 下载视频（MV / 现场版）=====
-   * 四家音乐平台的 MV 直链接口已全部封死（实测 404/400/参数错误），
-   * 所以「视频版」交给视频工具站下载：这里自动复制歌名并打开工具页，
-   * 用户粘贴搜索即可拿到 MV，解析完切回本页还能入库。 */
-  async function downloadVideo(s, btn) {
-    const q = ((s.title || '').trim() + ' ' + (s.artist && !/官方|打开原曲/.test(s.artist) ? s.artist : '')).trim() + ' MV';
-    let copied = false;
-    try { await navigator.clipboard.writeText(q); copied = true; } catch (e) {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = q; ta.style.position = 'fixed'; ta.style.opacity = '0';
-        document.body.appendChild(ta); ta.select();
-        copied = document.execCommand('copy'); ta.remove();
-      } catch (e2) {}
-    }
-    const target = 'https://vtool.tv/zh';
-    const win = window.open(target, '_blank');
-    if (win) { try { win.opener = null; } catch (e) {} }
-    const old = btn.textContent;
-    btn.textContent = copied ? '已打开工具' : '打开工具';
-    setTimeout(() => { btn.textContent = old; }, 3000);
-    /* 卡片上写清楚这一步为什么需要工具站 */
-    const row = btn.closest('.mu-item');
-    if (row && !row.querySelector('.mu-vidnote')) {
-      const note = document.createElement('div');
-      note.className = 'mu-vidnote';
-      note.innerHTML = 'MV / 现场版在工具页下载：歌名已复制，粘贴搜索即可。<a href="https://www.hellotik.app/zh" target="_blank" rel="noopener">换 HelloTik</a>';
-      const info = row.querySelector('.mu-info');
-      if (info) info.appendChild(note);
-    }
-  }
-
-  /* ===== 存到壁纸库（进「音乐」分类，永久保存） ===== */
+  /* ===== 播放/下载：网易云自家 outer 端点直取 blob ===== */
   async function grabAudio(s) {
     if (s.blobUrl) {
       try { const r = await fetch(s.blobUrl); if (r.ok) return await r.blob(); } catch (e) {}
     }
-    for (const u of [s.audio, s.audioAlt, s.neId ? NE + '/song/media/outer/url?id=' + s.neId + '.mp3' : '']) {
-      if (!u) continue;
-      try {
-        const r = await fetch(u, { signal: AbortSignal.timeout(60000) });
-        if (!r.ok) continue;
-        const b = await r.blob();
-        if (b && b.size > 20000) return b;
-      } catch (e) {}
-    }
+    if (!s.audio) return null;
+    try {
+      const r = await fetch(s.audio, { signal: AbortSignal.timeout(60000) });
+      if (!r.ok) return null;
+      const b = await r.blob();
+      if (b && b.size > 20000) {
+        s.blobUrl = URL.createObjectURL(b);
+        return b;
+      }
+    } catch (e) { /* 跨域/版权页 → 走打开原曲兜底 */ }
     return null;
   }
 
+  async function download(s, btn) {
+    if (!s.audio) { window.open(s.page || s.url, '_blank', 'noopener'); return; }
+    const name = safeName(s);
+    const old = btn.textContent;
+    btn.disabled = true; btn.textContent = '获取中…';
+    const blob = await grabAudio(s);
+    if (blob) {
+      const a = document.createElement('a');
+      a.href = s.blobUrl; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      btn.textContent = '已保存 ✓';
+      const au = btn.closest('.mu-item') && btn.closest('.mu-item').querySelector('audio');
+      if (au) { au.src = s.blobUrl; au.load(); }
+    } else {
+      /* 直链跨域取不到 blob：打开音频页，手机长按即可保存 */
+      window.open(s.audio, '_blank', 'noopener');
+      btn.textContent = '已打开 · 长按保存';
+      if (typeof toast === 'function') toast('浏览器跨域取不到文件，已打开音频页：手机长按 → 存储', 'warn');
+    }
+    setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
+  }
+
+  /* ===== 存到壁纸库（音乐分类，永久保存） ===== */
   async function saveToLibrary(s, btn) {
     if (typeof WPGH === 'undefined' || !WPGH.cfg || !WPGH.cfg.pat) {
       btn.textContent = '连接不可用';
@@ -299,11 +196,8 @@ const Music = (() => {
         bytes: new Uint8Array(await blob.arrayBuffer()),
         size: blob.size,
         itemExtra: { title, cat: '音乐', kind: 'audio', gif: false },
-      }], {
-        onStatus: (i, text) => { btn.textContent = text.slice(0, 8); },
-      });
-      try { committed.forEach(it => allItems.unshift(it)); } catch (e) {}
-      try { if (typeof renderAll === 'function') renderAll(); } catch (e) {}
+      }], { onStatus: (i, text) => { btn.textContent = text.slice(0, 8); } });
+      try { committed.forEach(it => allItems.unshift(it)); renderAll(); } catch (e) {}
       if (typeof toast === 'function') toast('音乐已存入壁纸库', 'ok');
       btn.textContent = '已入库 ✓';
       setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
@@ -314,21 +208,42 @@ const Music = (() => {
     }
   }
 
+  /* ===== 卡片 ===== */
+  function card(s) {
+    const media = s.audio
+      ? `<audio controls preload="none" src="${esc(s.audio)}"></audio>` +
+        (s.matched ? '<span class="mu-match">汽水未开放直链 · 已匹配网易云同名版本</span>' : '')
+      : '<span class="mu-noaudio">取直链中…</span>';
+    return `<div class="mu-item" style="--mc:${s.color}">
+      <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg()}</span></div>
+      <div class="mu-info">
+        <div class="mu-title"><span class="mu-note-sm">${svg()}</span>${esc(s.title)}</div>
+        <div class="mu-artist">${esc(s.artist || ' ')}</div>
+        <div class="mu-media">${media}</div>
+        <div class="mu-enrich"></div>
+      </div>
+      <div class="mu-actions">
+        <button type="button" class="mu-btn-dl" ${s.audio ? '' : 'disabled'}>下载音乐</button>
+        <button type="button" class="mu-btn-save" ${s.audio ? '' : 'disabled'}>存到壁纸库</button>
+        <button type="button" class="mu-btn-open">打开原曲</button>
+      </div>
+    </div>`;
+  }
+
   function bindCard(row, s) {
     const dl = row.querySelector('.mu-btn-dl');
-    if (dl) {
-      dl.disabled = !s.audio;
-      dl.onclick = () => download(s, dl);
-    }
-    const vd = row.querySelector('.mu-btn-vid');
-    if (vd) vd.onclick = () => downloadVideo(s, vd);
+    if (dl) { dl.disabled = !s.audio; dl.onclick = () => download(s, dl); }
     const sv = row.querySelector('.mu-btn-save');
-    if (sv) {
-      sv.disabled = !s.audio;
-      sv.onclick = () => saveToLibrary(s, sv);
-    }
+    if (sv) { sv.disabled = !s.audio; sv.onclick = () => saveToLibrary(s, sv); }
     const op = row.querySelector('.mu-btn-open');
-    if (op) op.onclick = () => window.open(s.page || s.url, '_blank', 'noopener');
+    if (op) op.onclick = () => window.open(s.page || NE, '_blank', 'noopener');
+    const a = row.querySelector('audio');
+    if (a) a.addEventListener('error', () => {
+      if (a.dataset.tried) return;
+      a.dataset.tried = '1';
+      a.src = outerURL(s.id || '') || s.audio;
+      a.load();
+    });
   }
 
   function renderInto(container, songs, note) {
@@ -337,122 +252,13 @@ const Music = (() => {
     box.classList.remove('hidden');
     box.innerHTML =
       `<div class="mu-head"><span class="mu-head-t">解析结果</span><span class="mu-head-sub">${esc(note || (songs.length + ' 首'))}</span></div>` +
-      '<div class="mu-list">' + songs.map(s => {
-        const p = PLATS.find(x => x.key === s.platform) || PLATS[0];
-        return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(s)}</div>`;
+      '<div class="mu-list">' + songs.map(sc => {
+        const p = PLATS.find(x => x.key === sc.platform) || PLATS[0];
+        return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(sc)}</div>`;
       }).join('') + '</div>' +
-      '<div class="mu-foot">汽水、网易云均可直接解析并下载 MP3；点【下载音乐】存到设备，点【存到壁纸库】永久保存并出现在「壁纸 → 音乐」分类。【下载视频】会打开视频工具站（歌名已复制），在那边下载 MV / 现场版。汽水官方未开放直链，音频为按歌名匹配的网易云同名版本（卡片会标注）。版权归原平台及权利人所有，仅用于个人试听收藏。</div>';
-    box.querySelectorAll('.mu-row').forEach((row, i) => { bindCard(row, songs[i]); attachAudioFallback(row, songs[i]); });
-  }
-
-  function jsonp(url, ms) {
-    return new Promise((resolve, reject) => {
-      const cb = 'wpMu' + Math.random().toString(36).slice(2, 9);
-      const s = document.createElement('script');
-      const t = setTimeout(() => { done(); reject(new Error('timeout')); }, ms || 5000);
-      function done() { clearTimeout(t); try { delete window[cb]; } catch (e) {} if (s.parentNode) s.remove(); }
-      window[cb] = d => { done(); resolve(d); };
-      s.src = url + (url.indexOf('?') === -1 ? '?' : '&') + 'callback=' + cb;
-      s.onerror = () => { done(); reject(new Error('jsonp error')); };
-      document.head.appendChild(s);
-    });
-  }
-
-  /* 网易云 JSON 接口无 CORS。优先走实测稳定的单通道（更快、不惊动多通道竞速），
-   * 失败再回退到 core.js 的 fetchJSONSmart 多通道代理。 */
-  async function neJSON(path, ms) {
-    ms = ms || 9000;
-    const full = NE + path;
-    try {
-      const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(full), { signal: AbortSignal.timeout(ms) });
-      if (r.ok) {
-        const j = await r.json();
-        if (j && (j.result || j.songs || j.data)) return j;
-      }
-    } catch (e) { /* 落到多通道 */ }
-    if (typeof fetchJSONSmart !== 'function') return null;
-    try {
-      return await Promise.race([
-        fetchJSONSmart(full, { ms }),
-        new Promise(r => setTimeout(() => r(null), ms + 600)),
-      ]);
-    } catch (e) { return null; }
-  }
-
-  /* 相同歌名只发一次搜索，避免打爆代理 */
-  const inflight = {};
-  function searchNeId(q) {
-    if (inflight[q]) return inflight[q];
-    inflight[q] = (async () => {
-      const d = await neJSON('/api/search/get?type=1&s=' + encodeURIComponent(q) + '&limit=5', 11000);
-      const list = (d && d.result && d.result.songs) || [];
-      return list.length ? String(list[0].id) : '';
-    })().then(v => { delete inflight[q]; return v; }, () => { delete inflight[q]; return ''; });
-    return inflight[q];
-  }
-
-  async function resolveNeId(s) {
-    if (s.platform === 'netease' && /^\d{4,14}$/.test(s.id)) return s.id;
-    const q = queryOf(s);
-    if (!q) return '';
-    const hit = cachedId(q);
-    if (hit) return hit;
-    const id = await searchNeId(q);
-    if (id) cacheId(q, id);
-    return id;
-  }
-
-  /* ===== 异步补元数据 + 直链（能通就补，通不了也不影响卡片） ===== */
-  async function enrich(s, box, opt) {
-    /* 平台元数据 */
-    try {
-      let x = null;
-      if (s.platform === 'netease' && s.id) {
-        const d = await neJSON('/api/song/detail?ids=%5B' + s.id + '%5D', 5000);
-        const q = d && d.songs && d.songs[0];
-        if (q) x = { title: q.name, artist: (q.artists || []).map(a => a.name).join(' / '), cover: (q.album || {}).picUrl || '', album: (q.album || {}).name || '' };
-      }
-      if (x && box) {
-        const row = box.querySelector('.mu-row[data-plat="' + s.platform + '"]');
-        if (row) {
-          Object.assign(s, x);
-          const ti = row.querySelector('.mu-title');
-          if (ti && x.title) ti.innerHTML = '<span class="mu-note-sm">' + svg('') + '</span>' + esc(x.title);
-          const ar = row.querySelector('.mu-artist');
-          if (ar) ar.textContent = [x.artist, x.album].filter(Boolean).join(' · ');
-          if (x.cover) {
-            const cv = row.querySelector('.mu-cover');
-            if (cv && !cv.querySelector('img')) { cv.classList.add('has-img'); cv.insertAdjacentHTML('afterbegin', '<img src="' + esc(x.cover) + '" referrerpolicy="no-referrer" alt="">'); }
-          }
-        }
-      }
-    } catch (e) { /* 静默 */ }
-
-    /* 直链 */
-    if (!box) return;
-    const row = box.querySelector('.mu-row[data-plat="' + s.platform + '"]');
-    if (!row) return;
-    const media = row.querySelector('.mu-media');
-    if (!media) return;
-    if (!s.audio) {
-      const id = await resolveNeId(s);
-      if (id) {
-        s.neId = id;
-        s.audio = metingURL(id, 0);
-        s.audioAlt = metingURL(id, 1);
-        s.matched = s.platform !== 'netease';
-      }
-    }
-    if (s.audio) {
-      media.innerHTML = `<audio controls preload="none" src="${esc(s.audio)}"></audio>` +
-        (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '');
-      const btn = row.querySelector('.mu-btn-dl');
-      if (btn) { btn.disabled = false; btn.onclick = () => download(s, btn); }
-      attachAudioFallback(row, s);
-      if (opt && opt.prefetch) prefetch(s, row);
-    } else {
-      media.innerHTML = '<span class="mu-noaudio">未匹配到可下载版本 · 点「打开原曲」收听</span>';
-    }
+      '<div class="mu-foot">本地毫秒级出卡片；歌名/歌手/封面与汽水直链由自家仓库中转补齐（GitHub Actions 调平台官方接口）。点【下载音乐】存 MP3，点【存到壁纸库】永久进「壁纸 → 音乐」。版权归原平台及权利人，仅个人试听收藏。</div>';
+    box.querySelectorAll('.mu-row').forEach((row, i) => bindCard(row, songs[i]));
+    return box;
   }
 
   function runInto(raw, container, opts) {
@@ -464,48 +270,70 @@ const Music = (() => {
       return null;
     }
     const s = parse(raw);
-    renderInto(box, [s], opts && opts.note);
-    if (!(opts && opts.noEnrich)) enrich(s, box, { prefetch: true });
+    const b = renderInto(box, [s], opts && opts.note);
+    if (!(opts && opts.noEnrich)) {
+      const row = b && b.querySelector('.mu-row');
+      const note = row && row.querySelector('.mu-enrich');
+      enrich(s, row, note);
+    }
     return s;
   }
 
-  /* ===== 双平台自测：识别 + 直链就绪状态一起显示 ===== */
-  function selftest(container) {
+  /* ===== 双平台自测：识别 + 直链 + 自家缓存 三项体检 ===== */
+  async function selftest(container) {
     const box = typeof container === 'string' ? $(container) : container;
     if (!box) return [];
     const songs = DEMOS.map(d => parse(d.url + ' ' + d.text));
-    const checked = PLATS.map((p, i) => ({ p, ok: !!(songs[i] && songs[i].platform === p.key) }));
-    renderInto(box, songs, '双平台自测 · ' + checked.filter(x => x.ok).length + '/' + PLATS.length + ' 识别通过');
+    const checked = PLATS.map((p, i) => ({ p, ok: !!(songs[i] && songs[i].platform === p.key && songs[i].id) }));
+    renderInto(box, songs, '双平台自测 · 识别 ' + checked.filter(x => x.ok).length + '/' + PLATS.length);
     const line = document.createElement('div');
     line.className = 'mu-testline';
-    line.id = 'mu-testline';
-    line.innerHTML = checked.map(x => `<span class="mu-test ${x.ok ? 'ok' : 'bad'}">${x.ok ? '✔' : '✘'} ${esc(x.p.short)}</span>`).join('') +
-      '<span class="mu-test" id="mu-test-dl">下载链路检测中…</span>';
+    line.innerHTML = checked.map(x => `<span class="mu-test ${x.ok ? 'ok' : 'bad'}">${x.ok ? '✔' : '✘'} 识别 ${esc(x.p.short)}</span>`).join('') +
+      '<span class="mu-test" id="mu-test-audio">直链检测中…</span>' +
+      '<span class="mu-test" id="mu-test-cache">自家缓存检测中…</span>';
     const head = box.querySelector('.mu-head');
     if (head) head.insertAdjacentElement('afterend', line);
-    /* 自测不预取整首音频（省 40MB 流量），但真发一次请求验证直链可达 */
-    Promise.all(songs.map(s => enrich(s, box, { prefetch: false }))).then(async () => {
-      /* 代理偶发抖动 → 对没拿到直链的卡片再试一次 */
-      const bad = songs.filter(s => !s.audio);
-      if (bad.length) await Promise.all(bad.map(s => enrich(s, box, { prefetch: false })));
-      const ready = songs.filter(s => !!s.audio).length;
-      let probe = '';
-      try {
-        const r = await fetch(songs[0].audio, { signal: AbortSignal.timeout(12000) });
-        probe = r.ok ? ' · 直链实测可用' : ' · 直链异常';
+
+    /* 直链实测：真发一次请求，验证「下载音乐」这条路通不通 */
+    try {
+      const r = await fetch(songs[0].audio, { signal: AbortSignal.timeout(12000) });
+      const el = $('mu-test-audio');
+      if (el) {
+        let sizeTxt = '';
+        try { if (r.ok && r.headers.get('content-length')) sizeTxt = '（' + fmtSize(Number(r.headers.get('content-length'))) + '）'; } catch (e) {}
+        el.className = 'mu-test ' + (r.ok ? 'ok' : 'bad');
+        el.textContent = r.ok ? '直链可用' + sizeTxt : '直链异常 HTTP ' + r.status;
         try { if (r.body) await r.body.cancel(); } catch (e) {}
-      } catch (e) { probe = ' · 直链检测超时'; }
-      const el = $('mu-test-dl');
-      if (el) { el.className = 'mu-test ' + (ready === PLATS.length ? 'ok' : 'bad'); el.textContent = '可下载 ' + ready + '/' + PLATS.length + probe; }
-    });
+      }
+    } catch (e) {
+      const el = $('mu-test-audio');
+      if (el) { el.className = 'mu-test bad'; el.textContent = '直链取不到（跨域/超时）'; }
+    }
+    /* 自家缓存体检 */
+    try {
+      const hits = [];
+      for (const sc of songs) {
+        const key = (sc.platform === 'netease' ? 'netease:' : 'qishui:') + sc.id;
+        const e = (typeof serverCacheGet === 'function') ? await serverCacheGet(key, { ms: 6000 }) : null;
+        hits.push(!!(e && e.kind === 'music' && !e.err));
+      }
+      const el = $('mu-test-cache');
+      if (el) {
+        el.className = 'mu-test ' + (hits.some(Boolean) ? 'ok' : '');
+        el.textContent = '自家缓存 ' + hits.filter(Boolean).length + '/' + hits.length;
+      }
+    } catch (e) {
+      const el = $('mu-test-cache');
+      if (el) { el.className = 'mu-test bad'; el.textContent = '缓存检测失败'; }
+    }
     return checked;
   }
 
   function styles() {
     if ($('music-styles')) return;
-    const s = document.createElement('style');
-    s.id = 'music-styles';
-    s.textContent = `
+    const st = document.createElement('style');
+    st.id = 'music-styles';
+    st.textContent = `
 .mu-plats{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 14px}
 .mu-plat{display:inline-flex;align-items:center;gap:6px;border:1px solid #e6eaf1;background:#fff;border-radius:999px;padding:6px 12px 6px 6px;font-size:12px;font-weight:600;color:#4b5563;cursor:pointer;transition:.15s}
 .mu-plat:hover{border-color:var(--mc);color:var(--mc);transform:translateY(-1px)}
@@ -538,21 +366,19 @@ const Music = (() => {
 .mu-item audio{width:100%;height:32px;display:block}
 .mu-noaudio{font-size:11px;color:#98a1b0;background:#f5f7fb;border-radius:7px;padding:4px 8px;display:inline-block}
 .mu-match{display:inline-block;margin-top:4px;font-size:10px;color:#b45309;background:#fffbeb;border-radius:6px;padding:2px 6px}
-.mu-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px;flex:none;width:136px}
+.mu-enrich{font-size:10.5px;color:#98a1b0;margin-top:3px;min-height:14px}
+.mu-actions{display:grid;grid-template-columns:1fr;gap:5px;flex:none;width:118px}
 .mu-actions button{border:none;border-radius:9px;padding:7px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
 .mu-btn-dl{background:var(--mc);color:#fff}
-.mu-btn-vid{background:#eef4ff;color:#2563eb}
 .mu-btn-save{background:#fff7ed;color:#c2410c}
 .mu-btn-open{background:#f1f4f9;color:#5b6472}
-.mu-vidnote{margin-top:8px;font-size:11px;line-height:1.6;background:#fff7ed;color:#9a4b00;border-radius:8px;padding:7px 9px}
-.mu-vidnote a{color:#c2410c;font-weight:700;margin-left:4px}
 .mu-actions button:disabled{opacity:.4;cursor:not-allowed}
 .mu-foot{font-size:11px;color:#9aa3b2;margin-top:10px;line-height:1.6}
 .mu-err{background:#fef2f2;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:12px}
 .hidden{display:none!important}
-@media(max-width:520px){.mu-item{gap:8px;padding:8px}.mu-cover{width:52px;height:52px}.mu-actions{width:124px}.mu-actions button{padding:6px 4px;font-size:10.5px}}
+@media(max-width:520px){.mu-item{gap:8px;padding:8px}.mu-cover{width:52px;height:52px}.mu-actions{width:104px}.mu-actions button{padding:6px 4px;font-size:10.5px}}
 `;
-    document.head.appendChild(s);
+    document.head.appendChild(st);
   }
 
   function init() {
@@ -583,7 +409,9 @@ const Music = (() => {
     if (go) go.addEventListener('click', () => runInto(inp && inp.value, 'mu-result'));
     if (inp) {
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') runInto(inp.value, 'mu-result'); });
-      inp.addEventListener('paste', () => setTimeout(() => runInto(inp.value, 'mu-result'), 100));
+      inp.addEventListener('paste', () => setTimeout(() => {
+        if (detect(inp.value)) runInto(inp.value, 'mu-result');
+      }, 100));
     }
     const test = $('mu-test');
     if (test) test.addEventListener('click', () => selftest('mu-result'));
@@ -592,5 +420,5 @@ const Music = (() => {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  return { parse, runInto, selftest, detect, renderInto, metingURL, PLATS, DEMOS };
+  return { parse, runInto, selftest, detect, renderInto, outerURL, PLATS, DEMOS };
 })();

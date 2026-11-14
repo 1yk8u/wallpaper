@@ -66,10 +66,19 @@ function mediaURL(it) {
 }
 
 function itemDyn(it) { return it.kind === 'video' || it.gif === true; }
+function itemAudio(it) { return it.kind === 'audio'; }
 
 function matchFilter(it) {
-  if (curType === 'image' && itemDyn(it)) return false;
-  if (curType === 'video' && !itemDyn(it)) return false;
+  /* 音乐只在「全部 / 音乐」里出现；图片/视频分类下不混入音频 */
+  if (itemAudio(it)) {
+    if (curType !== 'all' && curType !== 'audio') return false;
+  } else if (curType === 'audio') {
+    return false;
+  } else if (curType === 'image' && itemDyn(it)) {
+    return false;
+  } else if (curType === 'video' && !itemDyn(it)) {
+    return false;
+  }
   if (curCat !== 'all' && (it.cat || '综合') !== curCat) return false;
   if (curQ && !(it.title || '').toLowerCase().includes(curQ)) return false;
   return true;
@@ -101,11 +110,17 @@ function renderAll() {
   allItems.forEach(it => { if (it.id) seen[it.id] = (seen[it.id] || 0) + 1; });
   const dups = Object.values(seen).some(n => n > 1);
   const nAll = allItems.length;
-  let nImg = 0, nVid = 0;
-  allItems.forEach(it => itemDyn(it) ? nVid++ : nImg++);
+  let nImg = 0, nVid = 0, nAud = 0;
+  allItems.forEach(it => {
+    if (itemAudio(it)) nAud++;
+    else if (itemDyn(it)) nVid++;
+    else nImg++;
+  });
   $id('cnt-all').textContent = nAll ? '(' + nAll + ')' : '';
   $id('cnt-image').textContent = nImg ? '(' + nImg + ')' : '';
   $id('cnt-video').textContent = nVid ? '(' + nVid + ')' : '';
+  const cntAud = $id('cnt-audio');
+  if (cntAud) cntAud.textContent = nAud ? '(' + nAud + ')' : '';
 
   const list = allItems.filter(matchFilter);
   const grid = $id('grid');
@@ -116,6 +131,10 @@ function renderAll() {
 
 function thumbHTML(it) {
   const dyn = itemDyn(it);
+  if (it.kind === 'audio') {
+    const cover = it.cover ? `<img loading="lazy" src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover">` : '';
+    return `<span class="badge badge-audio">音乐</span><div class="vid-ph audio-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg></div><span class="play-tag play-tag-audio"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg>音频</span>`;
+  }
   const badge = `<span class="badge">${dyn ? '动态' : '静态'}</span>`;
   if (it.kind === 'video') {
     const cover = it.cover ? `<img loading="lazy" src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover">` : '';
@@ -147,7 +166,9 @@ function openDetail(it) {
   const dyn = itemDyn(it);
   $id('d-title').textContent = it.title || '未命名';
   const m = $id('d-media');
-  if (it.kind === 'video') {
+  if (it.kind === 'audio') {
+    m.innerHTML = `<audio controls preload="metadata" src="${escAttr(mediaURL(it))}"></audio>`;
+  } else if (it.kind === 'video') {
     m.innerHTML = it.cover
       ? `<video controls playsinline preload="metadata" poster="${escAttr(mediaOf(it.cover))}" src="${escAttr(mediaURL(it))}"></video>`
       : `<video controls playsinline preload="metadata" src="${escAttr(mediaURL(it))}"></video>`;
@@ -155,17 +176,20 @@ function openDetail(it) {
     m.innerHTML = `<img src="${escAttr(mediaURL(it))}" alt="${esc(it.title || '')}">`;
   }
   const bits = [];
-  bits.push(dyn ? '动态壁纸' : '静态壁纸');
+  if (it.kind === 'audio') bits.push('音乐');
+  else bits.push(dyn ? '动态壁纸' : '静态壁纸');
   if (it.kind === 'video' && it.gif !== true) bits.push('视频');
   if (it.gif) bits.push('GIF');
-  if (it.cat) bits.push(esc(it.cat));
+  if (it.cat && !(it.kind === 'audio' && it.cat === '音乐')) bits.push(esc(it.cat));
   if (it.size) bits.push(fmtSize(it.size));
   if (it.date) { try { bits.push(String(it.date).slice(0, 10)); } catch (e) {} }
   if (it.src === 'link') bits.push('外链');
   $id('d-meta').textContent = bits.join(' · ');
-  $id('d-tip').textContent = isIOS
-    ? 'iPhone 提示：点下载保存图片；视频请在【新窗口打开】后长按 → 存储视频。'
-    : '手机可长按图片/视频保存；电脑也可右键另存为。';
+  $id('d-tip').textContent = it.kind === 'audio'
+    ? '点上面的播放器试听；点【下载】把 MP3 存到设备。'
+    : (isIOS
+      ? 'iPhone 提示：点下载保存图片；视频请在【新窗口打开】后长按 → 存储视频。'
+      : '手机可长按图片/视频保存；电脑也可右键另存为。');
   openModal('modal-detail');
 }
 
@@ -309,6 +333,7 @@ async function ghPathExists(path) {
 }
 
 function extInfo(name) {
+  if (/\.(mp3|m4a|aac|flac|wav|ogg|opus)$/i.test(name)) return { kind: 'audio', gif: false };
   if (/\.(mp4|mov|webm|m4v)$/i.test(name)) return { kind: 'video', gif: false };
   if (/\.gif$/i.test(name)) return { kind: 'image', gif: true };
   return { kind: 'image', gif: false };

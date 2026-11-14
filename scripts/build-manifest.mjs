@@ -16,6 +16,7 @@ const THUMB_DIR = process.cwd() + '/thumbs';
 const isVideo = (n) => /\.(mp4|mov|webm|m4v)$/i.test(n);
 const isGif = (n) => /\.gif$/i.test(n);
 const isImage = (n) => /\.(jpe?g|png|webp|avif)$/i.test(n);
+const isAudio = (n) => /\.(mp3|m4a|aac|flac|wav|ogg|opus)$/i.test(n);
 
 function gitTime(path) {
   try {
@@ -47,7 +48,7 @@ function scan(dir) {
   }
   for (const f of filesInDir) {
     if (coverSuffix.test(f.name)) continue;
-    if (!isVideo(f.name) && !isGif(f.name) && !isImage(f.name)) continue;
+    if (!isVideo(f.name) && !isGif(f.name) && !isImage(f.name) && !isAudio(f.name)) continue;
 
     const rel = relative(WALLPAPER_DIR, f.full).split(sep).join('/');
     const dot = f.name.lastIndexOf('.');
@@ -71,14 +72,15 @@ function catOf(title) {
 }
 
 const title = f.name.replace(/\.[^.]+$/, '').replace(/\.\d+$/, '').replace(/[_\-]+/g, ' ').trim() || f.name;
+const audio = isAudio(f.name);
 
     const item = {
       id: 'w' + id,
       name: f.name,
       title,
-      cat: catOf(title),
-      kind: isVideo(f.name) ? 'video' : 'image',
-      gif: isGif(f.name),
+      cat: audio ? '音乐' : catOf(title),
+      kind: audio ? 'audio' : (isVideo(f.name) ? 'video' : 'image'),
+      gif: audio ? false : isGif(f.name),
       url: 'wallpapers/' + rel,
       size: statSync(f.full).size,
       date: new Date(ts * 1000).toISOString(),
@@ -101,7 +103,8 @@ if (existsSync(linksPath)) {
       links = arr.filter(x => x && /^https?:\/\//i.test(x.url || '')).map(x => ({
         id: x.id || ('lk' + createHash('sha1').update(x.url).digest('hex').slice(0, 10)),
         title: x.title || '直链壁纸',
-        kind: x.kind === 'video' ? 'video' : 'image',
+        cat: x.cat || (x.kind === 'audio' ? '音乐' : undefined),
+        kind: x.kind === 'audio' ? 'audio' : (x.kind === 'video' ? 'video' : 'image'),
         gif: !!x.gif,
         url: x.url,
         size: null,

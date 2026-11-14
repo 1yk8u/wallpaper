@@ -178,6 +178,11 @@ main{padding:22px 20px 36px;max-width:1160px;margin:0 auto}
   display:flex;align-items:center;gap:4px;border:1px solid rgba(63,56,42,.32);
 }
 .play-tag svg{width:9px;height:9px}
+/* ---- 音乐项 ---- */
+.badge-audio{background:rgba(255,236,214,.92);color:#9a4b00;border-color:rgba(154,75,0,.35)}
+.play-tag-audio{background:rgba(214,232,255,.92);color:#1e4b8f;border-color:rgba(30,75,143,.35)}
+.audio-ph .vid-cover{opacity:.55}
+#d-media audio{display:block;width:100%;margin:12px 0;border-radius:6px;background:#2b2418}
 .carditem figcaption{
   padding:8px 2px 2px;font-family:var(--serif);font-size:13px;font-weight:600;color:var(--ink);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -443,14 +448,3 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);transition:background-
   border-top:3px solid rgba(92,122,68,.55);
 }
 #onboard .ob-card{border-radius:20px;overflow:hidden}
-
-/* ===== 付费/额度徽章 ===== */
-.quota-badge{
-  display:inline-flex;align-items:center;gap:5px;
-  padding:5px 12px;border-radius:20px;border:1.5px solid rgba(92,122,68,.35);
-  background:rgba(255,255,255,.7);backdrop-filter:blur(8px);
-  font-size:12px;font-weight:600;color:#557a3c;cursor:pointer;
-  transition:all .2s;white-space:nowrap;
-}
-.quota-badge:hover{background:rgba(255,255,255,.95);border-color:#557a3c;transform:translateY(-1px)}
-.quota-badge span{font-size:11px}

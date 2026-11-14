@@ -5,8 +5,25 @@
  * 输入：env.PARSE_URLS（换行/逗号分隔的链接）
  * ===================================================================== */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 
 const CACHE_PATH = new URL('../data/parse-cache.json', import.meta.url);
+/* 单条轻量结果：前端轮询只读这个 <2KB 的文件，不必反复下载 600KB 总缓存。
+ * 文件名算法必须与前端 extractor.js 的 sha256(key).slice(0,16) 一致。 */
+const PARSED_DIR = new URL('../data/parsed/', import.meta.url);
+const parsedName = (key) => crypto.createHash('sha256').update(key).digest('hex').slice(0, 16) + '.json';
+function writeLight(key, entry) {
+  try {
+    /* 老缓存条目可能没有 ts；补一个当前时间，前端轮询才会认定「这是本次结果」 */
+    const out = { ...(entry || {}), key, ts: (entry && entry.ts) || new Date().toISOString() };
+    fs.mkdirSync(PARSED_DIR, { recursive: true });
+    fs.writeFileSync(new URL(parsedName(key), PARSED_DIR),
+      JSON.stringify(out, null, 2));
+    console.log('LIGHT ' + parsedName(key));
+  } catch (e) {
+    console.log('轻量结果写入失败（总缓存不受影响）：' + (e.message || e));
+  }
+}
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 /* ---------- 小工具 ---------- */
@@ -310,19 +327,26 @@ for (const raw of urls) {
 
     if (result) {
       cache.entries[key] = { ...result, ts: new Date().toISOString() };
+      writeLight(key, cache.entries[key]);
       changed++;
       console.log('OK ' + key + ' → ' + result.kind + ' ×' + (result.images ? result.images.length : 1));
     } else if (hasGood) {
+      /* 已有成功结果也补一份轻量文件：前端可能因 Pages 延迟没命中缓存而重复派单 */
+      writeLight(key, prior);
       console.log('KEEP ' + key + '（代抓没取到，但已有成功结果，不覆盖）');
     } else {
       cache.entries[key] = { err: '代抓未取到内容（页面结构变化或需登录）', ts: new Date().toISOString() };
+      writeLight(key, cache.entries[key]);
       changed++;
       console.log('FAIL ' + key + '（写err，前端会给提示）');
     }
   } catch (e) {
-    if (hasGood) console.log('ERR ' + key + '：' + (e.message || e) + '（保留已有成功结果）');
-    else {
+    if (hasGood) {
+      writeLight(key, prior);
+      console.log('ERR ' + key + '：' + (e.message || e) + '（保留已有成功结果）');
+    } else {
       cache.entries[key] = { err: String(e.message || e).slice(0, 120), ts: new Date().toISOString() };
+      writeLight(key, cache.entries[key]);
       changed++;
       console.log('ERR ' + key + '：' + (e.message || e));
     }

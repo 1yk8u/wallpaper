@@ -41,7 +41,7 @@ jobs:
         run: |
           git config user.name "relay-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/parse-cache.json
+          git add data/parse-cache.json data/parsed/
           if ! git diff --cached --quiet; then
             git commit -m "代抓缓存更新 $(date -u +%FT%TZ)"
             git push

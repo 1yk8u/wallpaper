@@ -88,22 +88,31 @@ const Music = (() => {
       key = (s.platform === 'netease' && /^\d{4,14}$/.test(s.id)) ? 'netease:' + s.id
         : (s.platform === 'qishui' && s.id) ? 'qishui:' + s.id : '';
     }
-    if (!key || typeof serverCacheGet !== 'function') return;
+    if (!key || typeof serverCacheGet !== 'function') { failMeta(s, row, noteEl, '无法识别这条分享'); return; }
     try {
       let e = await serverCacheGet(key);
       const fresh = e && !e.err && e.kind === 'music';
       if (!fresh) {
-        if (typeof relayDispatch !== 'function') return;
+        if (typeof relayDispatch !== 'function') { failMeta(s, row, noteEl, '仓库中转不可用'); return; }
         if (noteEl) noteEl.textContent = '寄给自家仓库取元数据…';
         const since = Date.now();
-        await relayDispatch(s.url, key);
+        /* 必须传纯链接：整段分享口令会让中转算出不一样的缓存键，结果永远等不到 */
+        await relayDispatch(s.page || s.url, key);
         e = await relayPoll(key, since, (i, sec) => { if (noteEl) noteEl.textContent = '仓库取元数据… ' + sec + 's'; });
       }
       if (e && e.kind === 'music' && !e.err) applyMeta(s, e, row);
-      else if (noteEl) noteEl.textContent = '元数据没取到，可点「打开原曲」';
+      else failMeta(s, row, noteEl, '元数据没取到，可点「打开原曲」收听');
     } catch (err) {
-      if (noteEl) noteEl.textContent = '元数据获取失败（不影响本地已识别的信息）';
+      failMeta(s, row, noteEl, '元数据获取失败（不影响本地已识别的信息）');
     }
+  }
+
+  /* 元数据没拿到时不能让卡片永远停在「取直链中…」且按钮全灰 */
+  function failMeta(s, row, note, msg) {
+    if (note) note.textContent = msg;
+    if (!row || s.audio) return;
+    const media = row.querySelector('.mu-media');
+    if (media) media.innerHTML = '<span class="mu-noaudio">没有可下载直链 · 点「打开原曲」收听</span>';
   }
 
   function applyMeta(s, e, row) {
@@ -221,7 +230,7 @@ const Music = (() => {
     const media = s.audio
       ? `<audio controls preload="none" src="${esc(s.audio)}"></audio>` +
         (s.matched ? '<span class="mu-match">汽水未开放直链 · 已匹配网易云同名版本</span>' : '')
-      : '<span class="mu-noaudio">取直链中…</span>';
+      : '<span class="mu-noaudio">暂无下载直链 · 可点「打开原曲」</span>';
     return `<div class="mu-item" style="--mc:${s.color}">
       <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg()}</span></div>
       <div class="mu-info">
@@ -302,20 +311,27 @@ const Music = (() => {
     const head = box.querySelector('.mu-head');
     if (head) head.insertAdjacentElement('afterend', line);
 
-    /* 直链实测：真发一次请求，验证「下载音乐」这条路通不通 */
+    /* 直链体检用 <audio> 元素：媒体标签不受 CORS 限制，和真实播放/下载一致。
+     * 旧版用 fetch 探测，网易云不给 CORS 头必然报错，还会白等 12 秒并误导用户。 */
+    const elA = $('mu-test-audio');
+    /* 先给确定答复，不让自测卡在「检测中…」；后台探测成功再升级为「可播放」 */
+    if (elA) { elA.className = 'mu-test'; elA.textContent = '直链受限 · 下载会打开音频页'; }
     try {
-      const r = await fetch(songs[0].audio, { signal: AbortSignal.timeout(12000) });
-      const el = $('mu-test-audio');
-      if (el) {
-        let sizeTxt = '';
-        try { if (r.ok && r.headers.get('content-length')) sizeTxt = '（' + fmtSize(Number(r.headers.get('content-length'))) + '）'; } catch (e) {}
-        el.className = 'mu-test ' + (r.ok ? 'ok' : 'bad');
-        el.textContent = r.ok ? '直链可用' + sizeTxt : '直链异常 HTTP ' + r.status;
-        try { if (r.body) await r.body.cancel(); } catch (e) {}
-      }
+      const au = document.createElement('audio');
+      au.preload = 'metadata';
+      let settled = false;
+      const finish = (ok, txt) => {
+        if (settled) return;
+        settled = true;
+        if (elA) { elA.className = 'mu-test ' + (ok ? 'ok' : ''); elA.textContent = txt; }
+        try { au.removeAttribute('src'); au.load(); } catch (e) {}
+      };
+      au.addEventListener('loadedmetadata', () => finish(true, '直链可播放'));
+      au.addEventListener('error', () => finish(false, '直链受限 · 下载会打开音频页'));
+      setTimeout(() => finish(false, '直链受限 · 下载会打开音频页'), 8000);
+      au.src = songs[0].audio;
     } catch (e) {
-      const el = $('mu-test-audio');
-      if (el) { el.className = 'mu-test bad'; el.textContent = '直链取不到（跨域/超时）'; }
+      if (elA) { elA.className = 'mu-test'; elA.textContent = '直链检测跳过 · 下载会打开音频页'; }
     }
     /* 自家缓存体检 */
     try {
@@ -324,7 +340,7 @@ const Music = (() => {
         let key = '';
         try { if (typeof parseCacheKey === 'function') key = parseCacheKey(sc.page || sc.url) || ''; } catch (e) {}
         if (!key) key = (sc.platform === 'netease' ? 'netease:' : 'qishui:') + sc.id;
-        const e = (typeof serverCacheGet === 'function') ? await serverCacheGet(key, { ms: 6000 }) : null;
+        const e = (typeof serverCacheGet === 'function') ? await serverCacheGet(key) : null;
         hits.push(!!(e && e.kind === 'music' && !e.err));
       }
       const el = $('mu-test-cache');
@@ -408,12 +424,11 @@ const Music = (() => {
     const inp = $('mu-link');
     const paste = $('mu-paste');
     if (paste) paste.addEventListener('click', async () => {
-      try {
-        const t = await navigator.clipboard.readText();
-        if (!t || !t.trim()) { inp && inp.focus(); return; }
-        inp.value = t.trim();
-        runInto(inp.value, 'mu-result');
-      } catch (e) { inp && inp.focus(); }
+      let t = '';
+      try { t = await navigator.clipboard.readText(); } catch (e) {}
+      if (t && t.trim()) { inp.value = t.trim(); runInto(inp.value, 'mu-result'); return; }
+      if (inp) inp.focus();
+      if (typeof toast === 'function') toast('浏览器不让自动读剪贴板：请长按输入框手动粘贴', 'warn');
     });
     const go = $('mu-go');
     if (go) go.addEventListener('click', () => runInto(inp && inp.value, 'mu-result'));

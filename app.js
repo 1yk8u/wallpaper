@@ -122,11 +122,39 @@ function renderAll() {
   const cntAud = $id('cnt-audio');
   if (cntAud) cntAud.textContent = nAud ? '(' + nAud + ')' : '';
 
-  const list = allItems.filter(matchFilter);
   const grid = $id('grid');
-  grid.innerHTML = list.map((it, i) => cardHTML(it, i)).join('');
-  showEmpty(list.length === 0, false);
+  gridList = allItems.filter(matchFilter);
+  grid.innerHTML = '';
+  gridShown = 0;
+  appendGrid();
+  showEmpty(gridList.length === 0, false);
   if (dups) console.warn('检测到重复 id 的壁纸项');
+}
+
+/* 手机首屏只渲染 60 张：857 张一次性塞进 DOM 会明显掉帧、还拖慢解析页切换 */
+const GRID_PAGE = 60;
+let gridList = [], gridShown = 0;
+function appendGrid() {
+  const grid = $id('grid');
+  if (!grid) return;
+  const slice = gridList.slice(gridShown, gridShown + GRID_PAGE);
+  if (slice.length) {
+    grid.insertAdjacentHTML('beforeend', slice.map((it, k) => cardHTML(it, gridShown + k)).join(''));
+    gridShown += slice.length;
+  }
+  let btn = $id('btn-more');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'btn-more';
+    btn.className = 'btn ghost';
+    btn.style.cssText = 'display:block;margin:20px auto 34px;min-width:180px';
+    btn.addEventListener('click', appendGrid);
+    grid.after(btn);
+  }
+  btn.hidden = gridShown >= gridList.length;
+  /* 内联 display 会盖掉 [hidden] 的 UA 样式，显式切换才靠得住 */
+  btn.style.display = btn.hidden ? 'none' : 'block';
+  if (!btn.hidden) btn.textContent = '加载更多（还有 ' + (gridList.length - gridShown) + ' 个）';
 }
 
 function thumbHTML(it) {
@@ -195,7 +223,11 @@ function openDetail(it) {
 
 /* =============== 首开问答（空盘问你要什么口味） =============== */
 function initOnboard() {
-  try { if (localStorage.getItem('wp-onboarded')) return; } catch (e) { return; }
+  try {
+    /* 从主屏用 #extract 直接进解析工具时，别再拿口味问答挡路 */
+    if (location.hash === '#extract') { localStorage.setItem('wp-onboarded', '1'); return; }
+    if (localStorage.getItem('wp-onboarded')) return;
+  } catch (e) { return; }
   const ob = $id('onboard');
   if (!ob) return;
   ob.classList.remove('hidden');
@@ -246,6 +278,8 @@ function bindUI() {
     if (seg) seg.dataset.active = String($$('.tab', seg).indexOf(t));
     $$('.page').forEach(p => p.classList.remove('active'));
     $id('tab-' + t.dataset.tab).classList.add('active');
+    /* 记住当前页：#extract 可添加到手机主屏，一打开就是解析工具 */
+    try { history.replaceState(null, '', '#' + t.dataset.tab); } catch (e) {}
     window.scrollTo(0, 0);
   }));
 
@@ -282,6 +316,22 @@ function bindUI() {
       downloadSmart(mediaURL(curDetail), name);
     });
     $id('d-open').addEventListener('click', () => { if (curDetail) window.open(mediaURL(curDetail), '_blank', 'noopener'); });
+  }
+
+  /* 滚到底自动续渲染；按钮保留给不想滚动的用户 */
+  let moreTick = 0;
+  window.addEventListener('scroll', () => {
+    const b = $id('btn-more');
+    const gal = $id('tab-gallery');
+    if (!b || b.hidden || (gal && !gal.classList.contains('active')) || Date.now() - moreTick < 250) return;
+    moreTick = Date.now();
+    if (b.getBoundingClientRect().top < window.innerHeight + 500) appendGrid();
+  }, { passive: true });
+
+  /* 从主屏图标 / 分享链接直接进解析页 */
+  if (location.hash === '#extract') {
+    const t = $('.tab[data-tab="extract"]');
+    if (t) t.click();
   }
 }
 

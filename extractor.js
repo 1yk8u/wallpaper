@@ -9,15 +9,16 @@
  * ===================================================================== */
 
 const PLATFORMS = {
-  douyin:     { name: '抖音',   test: /douyin\.com|iesdouyin\.com/i },
-  kuaishou:   { name: '快手',   test: /kuaishou\.com|chenzhongtech/i },
-  bilibili:   { name: '哔哩哔哩', test: /bilibili\.com|b23\.tv/i },
-  xiaohongshu:{ name: '小红书', test: /xiaohongshu\.com|xhslink\.com/i },
+  douyin:     { name: '抖音',   test: /douyin\.com|iesdouyin\.com|douyinapp/i },
+  kuaishou:   { name: '快手',   test: /kuaishou\.com|chenzhongtech|gifshow\.com|kuaishouapp/i },
+  bilibili:   { name: '哔哩哔哩', test: /bilibili\.com|b23\.tv|bilibili\.tv/i },
+  xiaohongshu:{ name: '小红书', test: /xiaohongshu\.com|xhslink\.com|xhscdn/i },
 };
 function detectPlatform(u) {
+  const s = String(u || '').toLowerCase();
   for (const k in PLATFORMS) {
     const p = PLATFORMS[k];
-    if (p.test.test(u)) return Object.assign({ key: k }, p);
+    if (p.test.test(s)) return Object.assign({ key: k }, p);
   }
   return null;
 }
@@ -75,65 +76,136 @@ function memoGet(url) {
   return null;
 }
 
-/* ---------- L2 自家仓库缓存（api.github.com 直读，不等 Pages 重建） ---------- */
-let CACHE_TSB = 0, CACHE_BUF = null;
+/* ---------- L2 自家仓库缓存（三通道竞速 + 会话内复用） ----------
+ * 旧实现串行先打 api.github.com：手机上常 30s+，匿名接口还会 403 限流，
+ * 而超时只有 8 秒 —— 结果就是每次解析都永久卡在「查自家缓存…」。
+ * 现在三路同时发，谁先成就用谁；600KB 的缓存一次会话只下一次。
+ *   ① 同源 Pages：无跨域、无鉴权，最快（可能比仓库晚 1~2 分钟）
+ *   ② raw.githubusercontent：实时 CDN
+ *   ③ api.github.com + PAT：最实时、最慢，兜底
+ * ------------------------------------------------------------------ */
+const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_SESSION_KEY = 'wp_parse_cache_v1';
+let CACHE_BUF = null, CACHE_AT = 0, CACHE_INFLIGHT = null;
+
+function ghCfg() {
+  return (typeof WPGH !== 'undefined' && WPGH.cfg) ? WPGH.cfg : null;
+}
+function cacheFromSession() {
+  try {
+    const o = JSON.parse(sessionStorage.getItem(CACHE_SESSION_KEY) || 'null');
+    if (o && o.at && Date.now() - o.at < CACHE_TTL && o.entries) return o.entries;
+  } catch (e) {}
+  return null;
+}
+function cacheToSession(entries) {
+  try { sessionStorage.setItem(CACHE_SESSION_KEY, JSON.stringify({ at: Date.now(), entries: entries })); }
+  catch (e) { /* 隐私模式 / 配额满：只留内存 */ }
+}
+async function fetchCacheJSON(url, init, ms) {
+  const r = await withTimeout(fetch(url, init), ms, '缓存读取超时');
+  if (!r || !r.ok) throw new Error('HTTP ' + (r ? r.status : 0));
+  return await r.json();
+}
+/* 多通道竞速：第一个成功即返回，后续成功仍会刷新内存里较新的那份 */
+async function raceCache(chans) {
+  return new Promise(resolve => {
+    let left = chans.length, done = false;
+    chans.forEach(run => run().then(j => {
+      if (!j || !j.entries) return;
+      if (!CACHE_BUF || String(j.updated || '') >= String(CACHE_BUF.updated || '')) {
+        CACHE_BUF = j; CACHE_AT = Date.now(); cacheToSession(j.entries);
+      }
+      if (!done) { done = true; resolve(CACHE_BUF.entries); }
+    }).catch(() => {}).finally(() => { if (--left === 0 && !done) resolve(null); }));
+  });
+}
+async function loadCache(force, ms) {
+  if (!force && CACHE_BUF && CACHE_AT && Date.now() - CACHE_AT < CACHE_TTL) return CACHE_BUF.entries;
+  if (!force) {
+    const s = cacheFromSession();
+    if (s) { CACHE_BUF = { entries: s }; CACHE_AT = Date.now(); return s; }
+  }
+  if (CACHE_INFLIGHT && !force) return CACHE_INFLIGHT;
+  const cfg = ghCfg(), bust = Date.now();
+  const chans = [
+    () => fetchCacheJSON('data/parse-cache.json?t=' + bust, { cache: 'no-store' }, ms),
+  ];
+  if (cfg) chans.push(() => fetchCacheJSON(
+    'https://raw.githubusercontent.com/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
+    '/' + encodeURIComponent(cfg.branch) + '/data/parse-cache.json?t=' + bust, { cache: 'no-store' }, ms));
+  if (cfg && cfg.pat) chans.push(() => fetchCacheJSON(
+    'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
+    '/contents/data/parse-cache.json?ref=' + encodeURIComponent(cfg.branch) + '&t=' + bust,
+    { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.raw', 'Authorization': 'Bearer ' + cfg.pat } }, ms));
+
+  const job = raceCache(chans);
+  CACHE_INFLIGHT = job.finally(() => { CACHE_INFLIGHT = null; });
+  return CACHE_INFLIGHT;
+}
 async function serverCacheGet(key, opt) {
   opt = opt || {};
-  const bust = Date.now();
-  /* 优先 api.github.com（中转一提交这里立刻能看到），失败退回 Pages */
-  try {
-    const cfg = (typeof WPGH !== 'undefined' && WPGH.cfg) ? WPGH.cfg : null;
-    const r = await withTimeout(fetch(
-      'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
-      '/contents/data/parse-cache.json?ref=' + encodeURIComponent(cfg.branch) + '&t=' + bust,
-      { headers: { 'Accept': 'application/vnd.github.raw', 'Authorization': 'Bearer ' + cfg.pat } }
-    ), opt.ms || 8000);
-    if (r.ok) {
-      const j = await r.json();
-      if (j && j.entries) { CACHE_BUF = j; CACHE_TSB = Date.now(); return j.entries[key] || null; }
-    }
-  } catch (e) { /* 落到 Pages 源 */ }
-  try {
-    const r = await withTimeout(fetch('data/parse-cache.json?t=' + bust, { cache: 'no-store' }), opt.ms || 8000);
-    if (r.ok) {
-      const j = await r.json();
-      if (j && j.entries) { CACHE_BUF = j; CACHE_TSB = Date.now(); return j.entries[key] || null; }
-    }
-  } catch (e) { /* 两路都不通 */ }
-  return null;
+  /* 20 秒下限：手机网络慢也不能像旧版那样 8 秒就判死 */
+  const entries = await loadCache(false, Math.max(opt.ms || 0, 20000));
+  return (entries && entries[key]) || null;
+}
+
+/* ---------- L3 轻量单条结果（data/parsed/<hash>.json，<2KB） ----------
+ * 中转每抓完一条就单独写一个小文件，轮询只读它，不再反复下 600KB 总缓存。
+ * 文件名与 scripts/parse-queue.mjs 的 sha256(key).slice(0,16) 逐字节一致。
+ * ------------------------------------------------------------------ */
+async function parsedPath(key) {
+  const h = await sha256Hex(key);
+  return 'data/parsed/' + h.slice(0, 16) + '.json';
+}
+async function raceJSON(chans) {
+  return new Promise(resolve => {
+    let left = chans.length, done = false;
+    chans.forEach(run => run().then(j => {
+      if (done || !j) return;
+      done = true; resolve(j);
+    }).catch(() => {}).finally(() => { if (--left === 0 && !done) resolve(null); }));
+  });
+}
+async function lightResultGet(key, ms) {
+  const cfg = ghCfg();
+  const p = await parsedPath(key), bust = Date.now();
+  ms = ms || 9000;
+  const chans = [];
+  if (cfg && cfg.pat) chans.push(() => fetchCacheJSON(
+    'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
+    '/contents/' + p + '?ref=' + encodeURIComponent(cfg.branch) + '&t=' + bust,
+    { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.raw', 'Authorization': 'Bearer ' + cfg.pat } }, ms));
+  if (cfg) chans.push(() => fetchCacheJSON(
+    'https://raw.githubusercontent.com/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
+    '/' + encodeURIComponent(cfg.branch) + '/' + p + '?t=' + bust, { cache: 'no-store' }, ms));
+  chans.push(() => fetchCacheJSON(p + '?t=' + bust, { cache: 'no-store' }, ms));
+  return await raceJSON(chans);
 }
 
 /* ---------- L3 自家中转：寄单 + 轮询 ---------- */
 async function relayDispatch(url, key) {
   const cfg = WPGH.cfg;
-  const r = await fetch('https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) + '/dispatches', {
-    method: 'POST',
-    headers: { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + cfg.pat },
-    body: JSON.stringify({ event_type: 'parse-request', client_payload: { url: url, key: key } }),
-  });
-  if (r.status !== 204) throw new Error('派单失败 HTTP ' + r.status);
+  const r = await withTimeout(fetch(
+    'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) + '/dispatches', {
+      method: 'POST',
+      headers: { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + cfg.pat },
+      body: JSON.stringify({ event_type: 'parse-request', client_payload: { url: url, key: key } }),
+    }), 15000, '派单超时（网络不通或令牌失效）');
+  if (r.status !== 204) throw new Error('派单失败 HTTP ' + r.status + '（令牌可能已失效）');
 }
-/* 轮询自家仓库缓存：中转提交成功后 api.github.com 立刻可见（无需等 Pages 重建） */
 async function relayPoll(key, since, onTick) {
   const t0 = Date.now();
-  for (let i = 0; i < 22; i++) {          /* 4s × 22 ≈ 88 秒 */
-    await sleep(4000);
-    let e = null;
-    try {
-      const cfg = WPGH.cfg;
-      const r = await withTimeout(fetch(
-        'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
-        '/contents/data/parse-cache.json?ref=' + encodeURIComponent(cfg.branch) + '&t=' + Date.now(),
-        { headers: { 'Accept': 'application/vnd.github.raw', 'Authorization': 'Bearer ' + cfg.pat } }
-      ), 8000);
-      if (r.ok) {
-        const j = await r.json();
-        if (j && j.entries) e = j.entries[key] || null;
-      }
-    } catch (e2) { /* 网络抖动继续等 */ }
+  for (let i = 0; i < 30; i++) {           /* 3s × 30 ≈ 90 秒 */
+    await sleep(3000);
+    let e = await lightResultGet(key);    /* 优先：只读单条小文件 */
+    if (!e && i % 3 === 2) {              /* 老仓库没有小文件时，偶尔刷一次总缓存兜底 */
+      const entries = await loadCache(true, 15000);
+      e = (entries && entries[key]) || null;
+    }
     if (e) {
       const ts = Date.parse(e.ts || '') || 0;
-      if (ts >= since - 10000) return e;   /* 是这次（或刚覆盖）写入的结果 */
+      if (ts >= since - 15000) return e; /* 是这次（或刚覆盖）写入的结果 */
     }
     if (onTick) onTick(i + 1, Math.round((Date.now() - t0) / 1000));
   }
@@ -150,13 +222,16 @@ function exStatus(text, kind) {
 }
 function exResultHTML(r, plat) {
   const title = esc(r.title || (plat ? plat.name + ' 内容' : '解析结果'));
+  /* 自家仓库里的文件名常带 # / ? / 中文，直接塞进 src 会被当成锚点/查询截断 → 全 404。
+   * mediaOf()（app.js）做 encodeURI + %23/%3F 转义，绝对 URL 原样返回。 */
+  const mu = (u) => (typeof mediaOf === 'function') ? mediaOf(u) : String(u || '');
   let body = '';
   if (r.kind === 'video') {
-    body = `<video class="ex-video" controls playsinline preload="metadata" ${r.cover ? `poster="${escAttr(r.cover)}"` : ''} src="${escAttr(r.play)}"></video>`;
+    body = `<video class="ex-video" controls playsinline preload="metadata" ${r.cover ? `poster="${escAttr(mu(r.cover))}"` : ''} src="${escAttr(mu(r.play))}"></video>`;
   } else {
     const imgs = (r.images || []).slice(0, 30);
     body = `<div class="ex-imggrid">` + imgs.map((u, i) =>
-      `<div class="iw"><img loading="lazy" src="${escAttr(u)}" alt=""><button class="dl" data-i="${i}" title="下载这张">↓</button></div>`
+      `<div class="iw"><img loading="lazy" src="${escAttr(mu(u))}" alt=""><button class="dl" data-i="${i}" title="下载这张">↓</button></div>`
     ).join('') + `</div>`;
   }
   const cnt = r.kind === 'video' ? '视频' : ((r.images || []).length + ' 张图');
@@ -181,7 +256,8 @@ function renderExtract(r, plat, url) {
   box.querySelectorAll('.ex-imggrid .dl').forEach(b => {
     b.onclick = () => {
       const u = (r.images || [])[Number(b.dataset.i)];
-      if (u) downloadSmart(u, (sanitizeName(r.title || 'img') + '-' + (Number(b.dataset.i) + 1) + guessExt(u)));
+      if (u) downloadSmart((typeof mediaOf === 'function') ? mediaOf(u) : u,
+        (sanitizeName(r.title || 'img') + '-' + (Number(b.dataset.i) + 1) + guessExt(u)));
     };
   });
   $id('ex-dlall').onclick = () => downloadAll(r);
@@ -196,16 +272,17 @@ function guessExt(u) {
 /* ---------- 下载全部（顺序执行，带进度） ---------- */
 async function downloadAll(r) {
   const prog = $id('ex-prog');
+  const mu = (u) => (typeof mediaOf === 'function') ? mediaOf(u) : u;
   if (r.kind === 'video') {
     if (prog) prog.textContent = '下载中…';
-    await downloadSmart(r.play, sanitizeName(r.title || 'video') + guessExt(r.play));
+    await downloadSmart(mu(r.play), sanitizeName(r.title || 'video') + guessExt(r.play));
     if (prog) prog.textContent = '';
     return;
   }
   const imgs = r.images || [];
   for (let i = 0; i < imgs.length; i++) {
     if (prog) prog.textContent = '下载 ' + (i + 1) + ' / ' + imgs.length + ' …';
-    try { await downloadViaBlob(imgs[i], sanitizeName(r.title || 'img') + '-' + (i + 1) + guessExt(imgs[i])); }
+    try { await downloadViaBlob(mu(imgs[i]), sanitizeName(r.title || 'img') + '-' + (i + 1) + guessExt(imgs[i])); }
     catch (e) { /* 单张失败继续 */ }
     await sleep(250);
   }
@@ -231,7 +308,8 @@ async function saveToLibrary(r, plat) {
       const u = list[i];
       let bytes = null;
       try {
-        const resp = await withTimeout(fetch(u), 45000, '取回超时');
+        const fetchURL = (typeof mediaOf === 'function') ? mediaOf(u) : u;
+        const resp = await withTimeout(fetch(fetchURL), 45000, '取回超时');
         if (resp && resp.ok) bytes = new Uint8Array(await resp.arrayBuffer());
       } catch (e) { /* 单张失败跳过 */ }
       if (!bytes || !bytes.length) continue;
@@ -292,8 +370,8 @@ async function startExtract() {
     const mi = $id('mu-link');
     if (mi) mi.value = raw;
     Music.runInto(raw, 'mu-result');
-    const card = $('section .card:nth-of-type(2)') || null;
-    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const cards = $id('tab-extract') ? $id('tab-extract').querySelectorAll('.ex-card') : [];
+    if (cards[1]) cards[1].scrollIntoView({ behavior: 'smooth', block: 'start' });
     toast('这是音乐链接，已送到音乐解析区', 'ok');
     return;
   }
@@ -317,9 +395,9 @@ async function startExtract() {
       renderExtract(memo, plat, url);
       return;
     }
-    /* L2 仓库缓存 */
+    /* L2 仓库缓存（三通道竞速，手机也不卡） */
     const key = parseCacheKey(url);
-    exStatus('查自家缓存…', '');
+    exStatus('查自家缓存（多路并发）…', '');
     let e = await serverCacheGet(key);
     const good = e && !e.err && ((e.kind === 'images' && e.images && e.images.length) || (e.kind === 'video' && e.play));
     if (good) {
@@ -334,8 +412,8 @@ async function startExtract() {
     exStatus('📮 寄给自家仓库代抓中（GitHub Actions）…', '');
     await relayDispatch(url, key);
     exStatus('📮 已寄出，仓库正在抓…', '');
-    const got = await relayPoll(key, since, (i, sec) => exStatus('📮 仓库抓取中… ' + i + ' 轮（' + sec + 's）', ''));
-    if (!got) throw new Error('代抓超时（约 90 秒没等到结果）。链接已入队，稍后再点一次解析即可');
+    const got = await relayPoll(key, since, (i, sec) => exStatus('📮 仓库抓取中… ' + i + ' 轮（' + sec + 's），页面别关', ''));
+    if (!got) throw new Error('代抓约 90 秒还没出结果（平台可能风控）。链接已入队，稍后再点一次「开始解析」通常就命中缓存');
     if (got.err) throw new Error('自家中转：' + got.err);
     memoPut(url, got);
     exStatus('✅ 自家仓库代抓完成', 'ok');
@@ -354,11 +432,12 @@ function initExtractor() {
   if (!inp) return;
   const paste = $id('ex-paste');
   if (paste) paste.addEventListener('click', async () => {
-    try {
-      const t = await navigator.clipboard.readText();
-      if (t && t.trim()) { inp.value = t.trim(); startExtract(); return; }
-    } catch (e) { /* 读不到就聚焦手粘 */ }
+    /* 手机浏览器（iOS Safari / 微信内置）常禁止 JS 读剪贴板，读不到就给明确指引 */
+    let t = '';
+    try { t = await navigator.clipboard.readText(); } catch (e) {}
+    if (t && t.trim()) { inp.value = t.trim(); startExtract(); return; }
     inp.focus();
+    toast('浏览器不让自动读剪贴板：请长按输入框手动粘贴，粘贴后会自动开始解析', 'warn');
   });
   const go = $id('ex-go');
   if (go) go.addEventListener('click', () => startExtract());

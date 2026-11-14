@@ -1,19 +1,19 @@
 /* =====================================================================
  * music.js —— 自研音乐解析工具 v3（纯前端、零后端、可真下载）
  *
- * 支持：汽水音乐 / 网易云音乐 / QQ音乐 / 酷狗音乐 分享链接
+ * 支持：汽水音乐 / 网易云音乐 分享链接
  * 输出：平台彩色图标 + 每首歌音符图标 + 歌名/歌手/封面 + 播放器 + 一键下载
  *
  * 下载链路（实测通过，浏览器直接拿到完整 MP3 blob）：
  *   ① 本地识别链接 → 平台 + ID + 歌名（毫秒级出卡片，绝不转圈）
- *   ② 网易云链接直接用 ID；QQ/酷狗/汽水用歌名走网易云公开搜索匹配同名曲
+ *   ② 网易云链接直接用 ID；汽水用歌名走网易云公开搜索匹配同名曲
  *      （搜索接口无 CORS，走 core.js 的 fetchJSONSmart 多通道代理竞速）
  *   ③ 公开 Meting 端点 type=url&site=netease&id=… → 302 到 https CDN，
  *      全程 Access-Control-Allow-Origin:*，前端 fetch 拿到 audio/mpeg blob
  *   ④ <a download> 保存为「歌名 - 歌手.mp3」；两个端点自动互为备份
  *
- * 说明：QQ/酷狗/汽水官方未开放直链（vkey 为空 / getdata 30020 / 页面风控），
- *      因此这三家下载的是「网易云同名版本」，界面会明确标注，不冒充原平台文件。
+ * 说明：汽水官方未开放直链（页面风控），因此下载的是「网易云同名版本」，
+ *      界面会明确标注，不冒充原平台文件。
  *      版权归各平台及权利人所有，仅用于个人试听收藏。
  * ===================================================================== */
 'use strict';
@@ -36,16 +36,6 @@ const Music = (() => {
       glyph: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".5"/>',
       idRe: /(?:song[/=]|\bid=|songId=)(\d{5,14})/i,
       page: id => 'https://music.163.com/#/song?id=' + id },
-    { key: 'qq', name: 'QQ音乐', short: 'QQ音乐', color: '#12b76a',
-      test: /(?:[a-z0-9]+\.)?y\.qq\.com|qm\.qq\.com|c6\.y\.qq\.com/i,
-      glyph: '<path d="M4 12a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".5"/>',
-      idRe: /(?:songDetail\/|songmid=|[?#&]mid=)([A-Za-z0-9]{10,20})/i,
-      page: id => 'https://y.qq.com/n/ryqq/songDetail/' + id },
-    { key: 'kugou', name: '酷狗音乐', short: '酷狗', color: '#2f7bff',
-      test: /kugou\.com/i,
-      glyph: '<path d="M5 19V5l7 7 7-7v14" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".5"/>',
-      idRe: /(?:hash=|#hash[=/])([0-9a-fA-F]{32})/i,
-      page: id => 'https://www.kugou.com/song/#hash=' + id },
     { key: 'qishui', name: '汽水音乐', short: '汽水', color: '#00b8bf',
       test: /qishui\.douyin\.com|music\.douyin\.com|qishui\.com/i,
       glyph: '<path d="M4 15c2-3 4-3 6 0s4 3 6 0 3-2 4-1" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/>',
@@ -55,8 +45,6 @@ const Music = (() => {
 
   const DEMOS = [
     { key: 'netease', url: 'https://music.163.com/song?id=33894312', text: '分享《情非得已》给你 - 群星' },
-    { key: 'qq',      url: 'https://y.qq.com/n/ryqq/songDetail/001yS0N33yPm1B', text: 'QQ音乐 分享《海阔天空》- Beyond' },
-    { key: 'kugou',   url: 'https://www.kugou.com/song/#hash=EFEC0563692CAF94C184248B1D83227F', text: '酷狗音乐《海阔天空》- Beyond' },
     { key: 'qishui',  url: 'https://qishui.douyin.com/song/7351234567890123456', text: '汽水音乐 分享《起风了》给你' },
   ];
 
@@ -112,7 +100,7 @@ const Music = (() => {
     const m = String(raw || '').match(p.idRe);
     const id = m ? m[1] : '';
     const g = guessText(raw);
-    const home = { netease: 'https://music.163.com', qq: 'https://y.qq.com', kugou: 'https://www.kugou.com', qishui: 'https://qishui.douyin.com' }[p.key];
+    const home = { netease: 'https://music.163.com', qishui: 'https://qishui.douyin.com' }[p.key];
     const s = {
       platform: p.key, platformName: p.name, color: p.color, id,
       title: g.title || (id ? p.short + ' · 歌曲 ' + id.slice(0, 12) : p.name + ' 分享歌曲'),
@@ -353,7 +341,7 @@ const Music = (() => {
         const p = PLATS.find(x => x.key === s.platform) || PLATS[0];
         return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(s)}</div>`;
       }).join('') + '</div>' +
-      '<div class="mu-foot">四平台均可直接解析并下载 MP3；点【下载音乐】存到设备，点【存到壁纸库】永久保存并出现在「壁纸 → 音乐」分类。【下载视频】会打开视频工具站（歌名已复制），在那边下载 MV / 现场版。QQ音乐 / 酷狗 / 汽水官方未开放直链，音频为按歌名匹配的网易云同名版本（卡片会标注）。版权归原平台及权利人所有，仅用于个人试听收藏。</div>';
+      '<div class="mu-foot">汽水、网易云均可直接解析并下载 MP3；点【下载音乐】存到设备，点【存到壁纸库】永久保存并出现在「壁纸 → 音乐」分类。【下载视频】会打开视频工具站（歌名已复制），在那边下载 MV / 现场版。汽水官方未开放直链，音频为按歌名匹配的网易云同名版本（卡片会标注）。版权归原平台及权利人所有，仅用于个人试听收藏。</div>';
     box.querySelectorAll('.mu-row').forEach((row, i) => { bindCard(row, songs[i]); attachAudioFallback(row, songs[i]); });
   }
 
@@ -391,7 +379,7 @@ const Music = (() => {
     } catch (e) { return null; }
   }
 
-  /* 相同歌名只发一次搜索：四平台自测里 QQ 与酷狗都是《海阔天空》，避免打爆代理 */
+  /* 相同歌名只发一次搜索，避免打爆代理 */
   const inflight = {};
   function searchNeId(q) {
     if (inflight[q]) return inflight[q];
@@ -423,10 +411,6 @@ const Music = (() => {
         const d = await neJSON('/api/song/detail?ids=%5B' + s.id + '%5D', 5000);
         const q = d && d.songs && d.songs[0];
         if (q) x = { title: q.name, artist: (q.artists || []).map(a => a.name).join(' / '), cover: (q.album || {}).picUrl || '', album: (q.album || {}).name || '' };
-      } else if (s.platform === 'kugou' && s.id) {
-        const d = await jsonp('https://wwwapi.kugou.com/yy/index.php?r=play/getdata&hash=' + s.id + '&platid=4&mid=1&album_id=0', 4000).catch(() => null);
-        const q = d && d.data;
-        if (q && q.song_name) x = { title: q.song_name, artist: q.author_name || '', album: q.album_name || '', cover: q.img || '' };
       }
       if (x && box) {
         const row = box.querySelector('.mu-row[data-plat="' + s.platform + '"]');
@@ -476,7 +460,7 @@ const Music = (() => {
     if (!box) return null;
     if (!String(raw || '').trim()) {
       box.classList.remove('hidden');
-      box.innerHTML = '<div class="mu-err">先粘贴汽水 / 网易云 / QQ音乐 / 酷狗的分享链接。</div>';
+      box.innerHTML = '<div class="mu-err">先粘贴汽水 / 网易云的分享链接。</div>';
       return null;
     }
     const s = parse(raw);
@@ -485,13 +469,13 @@ const Music = (() => {
     return s;
   }
 
-  /* ===== 四平台自测：识别 + 直链就绪状态一起显示 ===== */
+  /* ===== 双平台自测：识别 + 直链就绪状态一起显示 ===== */
   function selftest(container) {
     const box = typeof container === 'string' ? $(container) : container;
     if (!box) return [];
     const songs = DEMOS.map(d => parse(d.url + ' ' + d.text));
     const checked = PLATS.map((p, i) => ({ p, ok: !!(songs[i] && songs[i].platform === p.key) }));
-    renderInto(box, songs, '四平台自测 · ' + checked.filter(x => x.ok).length + '/4 识别通过');
+    renderInto(box, songs, '双平台自测 · ' + checked.filter(x => x.ok).length + '/' + PLATS.length + ' 识别通过');
     const line = document.createElement('div');
     line.className = 'mu-testline';
     line.id = 'mu-testline';
@@ -512,7 +496,7 @@ const Music = (() => {
         try { if (r.body) await r.body.cancel(); } catch (e) {}
       } catch (e) { probe = ' · 直链检测超时'; }
       const el = $('mu-test-dl');
-      if (el) { el.className = 'mu-test ' + (ready === 4 ? 'ok' : 'bad'); el.textContent = '可下载 ' + ready + '/4' + probe; }
+      if (el) { el.className = 'mu-test ' + (ready === PLATS.length ? 'ok' : 'bad'); el.textContent = '可下载 ' + ready + '/' + PLATS.length + probe; }
     });
     return checked;
   }

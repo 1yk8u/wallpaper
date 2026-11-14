@@ -73,7 +73,8 @@ const ParseHub = (() => {
     for (let u of raw) {
       u = u.replace(/[.,;:!?。，；！？、)+]+$/, '').replace(/&amp;/g, '&');
       if (!/^https?:\/\//i.test(u)) continue;
-      if (PAGE_RE.test(u)) continue;
+      /* 分享页 / 工具页链接排除；但工具站给出的「下载 / 代理 / 媒体文件」链接要留下 */
+      if (PAGE_RE.test(u) && !MEDIA_RE.test(u) && !/(download|file|proxy|media)/i.test(u)) continue;
       if (!MEDIA_RE.test(u) && !CDN_RE.test(u)) continue;
       if (seen.has(u)) continue;
       seen.add(u);
@@ -136,9 +137,19 @@ const ParseHub = (() => {
       const src = it.file ? (it._blobURL || '') : it.url;
       const media = it.video
         ? `<span class="ph-thumb-vid">▶</span>`
-        : `<img src="${esc(src)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.style.opacity=.25">`;
+        : `<img src="${esc(src)}" alt="" referrerpolicy="no-referrer" loading="lazy">`;
       return `<div class="ph-thumb" data-i="${i}">${media}<button class="ph-thumb-x" data-rm="${i}" title="移除">×</button></div>`;
     }).join('');
+    /* CDN 防盗链时预览会失败 → 换成占位图标，不留破图 */
+    box.querySelectorAll('img').forEach(img => {
+      img.addEventListener('error', () => {
+        const holder = document.createElement('span');
+        holder.className = 'ph-thumb-fail';
+        holder.textContent = '🖼';
+        holder.title = '预览受限，仍可尝试保存';
+        img.replaceWith(holder);
+      });
+    });
     box.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => {
       const i = +b.getAttribute('data-rm');
       if (caught[i] && caught[i]._blobURL) URL.revokeObjectURL(caught[i]._blobURL);
@@ -421,6 +432,7 @@ const ParseHub = (() => {
 .ph-thumbs:empty{display:none}
 .ph-thumb{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;border:1px solid #e3e9f2;background:#f1f5fb;flex:none}
 .ph-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.ph-thumb-fail{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:22px;background:#eef2f9;color:#94a3b8}
 .ph-thumb-vid{display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#2563eb;font-size:22px;background:linear-gradient(135deg,#e0e7ff,#f1f5ff)}
 .ph-thumb-x{position:absolute;top:2px;right:2px;width:19px;height:19px;line-height:17px;text-align:center;border:0;border-radius:50%;background:rgba(17,24,39,.62);color:#fff;font-size:14px;cursor:pointer;padding:0}
 .ph-ask{margin-top:12px;border:1.5px solid #bfdbfe;background:#eff6ff;border-radius:13px;padding:13px;animation:phPop .22s ease-out}

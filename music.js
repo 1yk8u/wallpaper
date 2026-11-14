@@ -154,12 +154,54 @@ const Music = (() => {
     </div>`;
   }
 
+  /* 后台静默预取：拿到完整 MP3 后，播放器与下载都走本地 blob。
+   * 卡片本身不等它（毫秒级先渲染），1~2 秒后播放/下载都变成零等待。 */
+  async function prefetch(s, row) {
+    if (!s.audio || s.blobUrl || s._fetching) return;
+    s._fetching = true;
+    for (const u of [s.audio, s.audioAlt]) {
+      if (!u) continue;
+      try {
+        const r = await fetch(u, { signal: AbortSignal.timeout(45000) });
+        if (!r.ok) continue;
+        const blob = await r.blob();
+        if (!blob || blob.size < 20000) continue;
+        s.blobUrl = URL.createObjectURL(blob);
+        s.blobSize = blob.size;
+        const a = row && row.querySelector('audio');
+        if (a) { a.src = s.blobUrl; a.load(); }
+        const btn = row && row.querySelector('.mu-btn-dl');
+        if (btn) btn.title = '音频已就绪，点击立即保存';
+        break;
+      } catch (e) { /* 换备用端点 */ }
+    }
+    s._fetching = false;
+  }
+
+  function attachAudioFallback(row, s) {
+    const a = row && row.querySelector('audio');
+    if (!a || !s.audioAlt) return;
+    a.addEventListener('error', () => {
+      if (a.dataset.alt || s.blobUrl) return;
+      a.dataset.alt = '1'; a.src = s.audioAlt; a.load();
+    });
+  }
+
   /* ===== 一键下载：真·把完整 MP3 存到手机 ===== */
   async function download(s, btn) {
     if (!s.audio) return;
     const name = safeName(s);
     const old = btn.textContent;
-    btn.disabled = true; btn.textContent = '获取中…';
+    btn.disabled = true; btn.textContent = s.blobUrl ? '保存中…' : '获取中…';
+    /* 预取已完成 → 直接保存，点击即完成 */
+    if (s.blobUrl) {
+      const a = document.createElement('a');
+      a.href = s.blobUrl; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      btn.textContent = '已保存';
+      setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
+      return;
+    }
     const urls = [s.audio, s.audioAlt, s.neId ? NE + '/song/media/outer/url?id=' + s.neId + '.mp3' : ''];
     for (const u of urls) {
       if (!u) continue;
@@ -168,11 +210,13 @@ const Music = (() => {
         if (!r.ok) continue;
         const blob = await r.blob();
         if (!blob || blob.size < 20000) continue;   // 太小 = 错误页，不算音频
+        s.blobUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = name;
+        a.href = s.blobUrl; a.download = name;
         document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        /* 下载完的音频顺手给播放器，之后离线也能播 */
+        const au = btn.closest('.mu-item') && btn.closest('.mu-item').querySelector('audio');
+        if (au) { au.src = s.blobUrl; au.load(); }
         btn.textContent = '已保存';
         setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
         return;
@@ -205,7 +249,7 @@ const Music = (() => {
         return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(s)}</div>`;
       }).join('') + '</div>' +
       '<div class="mu-foot">四平台均可下载 MP3。QQ音乐 / 酷狗 / 汽水官方未开放直链，下载的是按歌名匹配的网易云同名版本（卡片会标注）；网易云链接为原曲。版权归原平台及权利人所有，仅用于个人试听收藏。</div>';
-    box.querySelectorAll('.mu-row').forEach((row, i) => bindCard(row, songs[i]));
+    box.querySelectorAll('.mu-row').forEach((row, i) => { bindCard(row, songs[i]); attachAudioFallback(row, songs[i]); });
   }
 
   function jsonp(url, ms) {
@@ -248,7 +292,7 @@ const Music = (() => {
   }
 
   /* ===== 异步补元数据 + 直链（能通就补，通不了也不影响卡片） ===== */
-  async function enrich(s, box) {
+  async function enrich(s, box, opt) {
     /* 平台元数据 */
     try {
       let x = null;
@@ -297,6 +341,8 @@ const Music = (() => {
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '');
       const btn = row.querySelector('.mu-btn-dl');
       if (btn) { btn.disabled = false; btn.onclick = () => download(s, btn); }
+      attachAudioFallback(row, s);
+      if (opt && opt.prefetch) prefetch(s, row);
     } else {
       media.innerHTML = '<span class="mu-noaudio">未匹配到可下载版本 · 点「打开原曲」收听</span>';
     }
@@ -312,7 +358,7 @@ const Music = (() => {
     }
     const s = parse(raw);
     renderInto(box, [s], opts && opts.note);
-    if (!(opts && opts.noEnrich)) enrich(s, box);
+    if (!(opts && opts.noEnrich)) enrich(s, box, { prefetch: true });
     return s;
   }
 
@@ -330,11 +376,17 @@ const Music = (() => {
       '<span class="mu-test" id="mu-test-dl">下载链路检测中…</span>';
     const head = box.querySelector('.mu-head');
     if (head) head.insertAdjacentElement('afterend', line);
-    /* 每张卡片补直链，并在检测行汇总 */
-    Promise.all(songs.map(s => enrich(s, box))).then(() => {
+    /* 自测不预取整首音频（省 40MB 流量），但真发一次请求验证直链可达 */
+    Promise.all(songs.map(s => enrich(s, box, { prefetch: false }))).then(async () => {
       const ready = songs.filter(s => !!s.audio).length;
+      let probe = '';
+      try {
+        const r = await fetch(songs[0].audio, { signal: AbortSignal.timeout(12000) });
+        probe = r.ok ? ' · 直链实测可用' : ' · 直链异常';
+        try { if (r.body) await r.body.cancel(); } catch (e) {}
+      } catch (e) { probe = ' · 直链检测超时'; }
       const el = $('mu-test-dl');
-      if (el) { el.className = 'mu-test ' + (ready === 4 ? 'ok' : 'bad'); el.textContent = '可下载 ' + ready + '/4'; }
+      if (el) { el.className = 'mu-test ' + (ready === 4 ? 'ok' : 'bad'); el.textContent = '可下载 ' + ready + '/4' + probe; }
     });
     return checked;
   }

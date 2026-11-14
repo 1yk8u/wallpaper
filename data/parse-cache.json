@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-14T06:39:38.422Z",
+  "updated": "2026-11-14T06:40:00.193Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7087,6 +7087,10 @@
       "matched": true,
       "matchedId": "77098",
       "ts": "2026-11-14T06:39:37.622Z"
+    },
+    "qishui:6pcj2vk": {
+      "err": "汽水页面没有歌曲数据(该曲可能不支持网页播放)",
+      "ts": "2026-11-14T06:39:59.393Z"
     }
   },
   "engine": "1.0.0"

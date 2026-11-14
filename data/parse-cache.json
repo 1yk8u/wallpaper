@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-13T14:54:12.521Z",
+  "updated": "2026-11-14T06:07:49.899Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -6910,10 +6910,8 @@
       "ts": "2026-11-07T12:47:15.079Z"
     },
     "v.kuaishou.com/kvmba3wp": {
-      "err": "快手页面没有作品数据（可能是推荐页/风控页/短链已失效），换完整作品链接或在本地 CLI 里试",
-      "code": "STRUCT",
-      "engine": "1.0.0",
-      "ts": "2026-11-07T13:18:33.717Z"
+      "err": "快手 SSR：fetch failed",
+      "ts": "2026-11-14T06:07:49.098Z"
     },
     "v.kuaishou.com/nimreufc": {
       "err": "快手页面没有作品数据（可能是推荐页/风控页/短链已失效），换完整作品链接或在本地 CLI 里试",

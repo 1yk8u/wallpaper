@@ -277,8 +277,11 @@ const ParseHub = (() => {
     if (!quota(list.length)) return;
     busy = true;
     const yes = $('ph-yes'); if (yes) yes.disabled = true;
-    const stamp = Date.now().toString(36);
-    const title = '解析收藏 ' + new Date().toLocaleDateString('zh-CN');
+    /* 清单由 Actions 从文件名生成标题 → 文件名要可读，且每张不重名 */
+    const srcPlat = detect(extractURL(($('ph-link') || {}).value || ''));
+    const label = (srcPlat ? srcPlat.n : '解析') + '收藏_' +
+      new Date().toISOString().slice(0, 10).replace(/-/g, '') + '_';
+    const title = label.replace(/_/g, ' ').trim();
     const entries = [];
     let fail = 0;
     for (let i = 0; i < list.length; i++) {
@@ -289,10 +292,10 @@ const ParseHub = (() => {
         const size = blob.size || (list[i].file && list[i].file.size) || 0;
         if (size > 60 * 1024 * 1024) throw new Error('超过 60MB');
         entries.push({
-          name: safeName('ph' + stamp + '-' + (i + 1)) + extOf(list[i].url, list[i].file, blob.type),
+          name: safeName(label + (i + 1)) + extOf(list[i].url, list[i].file, blob.type),
           bytes: new Uint8Array(await blob.arrayBuffer()),
           size,
-          itemExtra: { title: title + (list.length > 1 ? ' ' + (i + 1) : '') },
+          itemExtra: { title: title + (i + 1) },
         });
       } catch (e) { fail++; }
     }

@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-14T09:03:13.013Z",
+  "updated": "2026-11-14T09:09:20.818Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7136,6 +7136,10 @@
         "url": "https://p2.a.yximgs.com/upic/2026/10/06/09/BMjAyNjEwMDYwOTUzNDVfMjA3Mjg0NTYxNl8yMTEyOTI1MjM5NzFfMV82_Be86461cde24e8a0663921cfbfab0bdbb.jpg?clientCacheKey=3x2kxb4cjtaxkb6.jpg&di=146d56e1&bp=10000"
       },
       "ts": "2026-11-14T09:03:12.213Z"
+    },
+    "v.kuaishou.com/kvxwxd9f%20%e5%9b%be%e5%87%a0%e6%98%af%e4%bd%a0%e4%bb%8a%e6%99%9a%e7%9a%84%e7%99%bd%e6%9c%88%e5%85%89%ef%bc%9f%22%e4%ba%8c%e6%ac%a1%e5%85%83%e7%be%8e%e5%9b%be%20%22%e5%8a%a8%e6%bc%ab%e5%a3%81%e7%ba%b8%20%22%e9%94%81%e5%b1%8f%e5%a3%81%e7%ba%b8%20%22%e5%a3%81%e7%ba%b8%20%e8%af%a5%e4%bd%9c%e5%93%81%e5%9c%a8%e5%bf%ab%e6%89%8b%e8%a2%ab%e6%92%ad%e6%94%be%e8%bf%875794%e6%ac%a1%ef%bc%8c%e7%82%b9%e5%87%bb%e9%93%be%e6%8e%a5%ef%bc%8c%e6%89%93%e5%bc%80%e3%80%90%e5%bf%ab%e6%89%8b%e6%9e%81%e9%80%9f%e7%89%88%e3%80%91%e7%9b%b4%e6%8e%a5%e8%a7%82%e7%9c%8b%ef%bc%81": {
+      "err": "快手 SSR：无法从链接提取快手作品号 ← https://v.kuaishou.com/KVxWXD9F%20%E5%9B%BE%E5%87%A0%E6%98%AF%E4%BD%A0%E4%BB%8A%E6%99%9A%E7%9A%84%",
+      "ts": "2026-11-14T09:09:20.017Z"
     }
   },
   "engine": "1.0.0"

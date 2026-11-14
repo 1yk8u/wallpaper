@@ -40,15 +40,44 @@ async function initApp() {
   initOnboard();
 }
 
+/* 本机入库兜底：条目提交到仓库后立刻落一份，刷新/重进页面马上能看到，
+ * 不必等 GitHub Actions 重建 data/wallpapers.json（要几分钟且可能排队）。
+ * 清单里出现同 url 后按 url 去重，不会重复显示。 */
+const LOCAL_ITEMS_KEY = 'wp_local_items_v1';
+function localItemsRead() {
+  try {
+    const a = JSON.parse(localStorage.getItem(LOCAL_ITEMS_KEY) || '[]');
+    const cut = Date.now() - 30 * 864e5;
+    return (Array.isArray(a) ? a : []).filter(x => x && x.url && (!x.at || x.at > cut));
+  } catch (e) { return []; }
+}
+function localItemsAdd(items) {
+  try {
+    const cur = localItemsRead(), seen = new Set(cur.map(x => x.url));
+    items.forEach(it => {
+      if (it && it.url && !seen.has(it.url)) { cur.unshift(Object.assign({ at: Date.now() }, it)); seen.add(it.url); }
+    });
+    localStorage.setItem(LOCAL_ITEMS_KEY, JSON.stringify(cur.slice(0, 200)));
+  } catch (e) { /* 隐私模式 / 配额满：忽略，仓库本身已存好 */ }
+}
+function mergeItems(remote, local) {
+  const seen = new Set(), out = [];
+  [...local, ...remote].forEach(it => {
+    if (it && it.url && !seen.has(it.url)) { seen.add(it.url); out.push(it); }
+  });
+  return out;
+}
 async function loadData(silent) {
   try {
     const r = await withTimeout(fetch('data/wallpapers.json?ts=' + Date.now()), 20000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     const list = j.items || j || [];
-    allItems = Array.isArray(list) ? list.filter(x => x && x.url) : [];
+    const remote = Array.isArray(list) ? list.filter(x => x && x.url) : [];
+    allItems = mergeItems(remote, localItemsRead());
     if (!silent) renderAll();
   } catch (e) {
+    allItems = mergeItems(allItems, localItemsRead());
     if (!allItems.length) showEmpty(true);
     if (!silent) toast('壁纸清单加载失败：' + (e.message || e), 'bad');
   }
@@ -416,50 +445,77 @@ async function commitFilesInner(config, opt) {
   const big = list.find(f => (f.size || 0) > 60 * 1024 * 1024);
   if (big) throw new Error('存在超过 60MB 的文件，请改用 GitHub 网页端上传');
 
-  const prepared = [];
+  /* ① 文件名避让：批次内重名（长标题被截断时最易触发）+ 仓库已存在同名，
+   *    一律追加 -2/-3…，保证每个 path 唯一，绝不互相覆盖成只有 1 个文件。 */
+  const prepared = [], used = new Set();
+  const pathExists = async (name) => {
+    try { return await ghPathExists('wallpapers/' + name); } catch (e) { return false; }
+  };
   for (let i = 0; i < total; i++) {
-    const f = list[i];
-    let name = sanitizeName(f.name || 'file-' + i);
-    try {
-      if (await ghPathExists('wallpapers/' + name)) {
-        const dot = name.lastIndexOf('.');
-        const base = dot > 0 ? name.slice(0, dot) : name;
-        const ext = dot > 0 ? name.slice(dot) : '';
-        name = base + '-2' + ext;
-      }
-    } catch (e) { /* 无所谓，覆盖也没关系 */ }
+    let name = sanitizeName(list[i].name || 'file-' + i);
+    const dot = name.lastIndexOf('.');
+    const base = (dot > 0 ? name.slice(0, dot) : name).replace(/-\d+$/, '');
+    const ext = dot > 0 ? name.slice(dot) : '';
+    let n = 2;
+    while (n < 200 && (used.has(name.toLowerCase()) || await pathExists(name))) {
+      const suffix = '-' + n + ext;
+      name = base.slice(0, Math.max(1, 80 - suffix.length)) + suffix;
+      n++;
+    }
+    used.add(name.toLowerCase());
     prepared.push(name);
   }
 
-  const CHUNK = 4;
-  const committed = [];
-  for (let start = 0; start < total; start += CHUNK) {
-    const slice = list.slice(start, start + CHUNK);
-    const ref = await ghRef();
-    const tree = [];
-    for (let k = 0; k < slice.length; k++) {
-      const idx = start + k;
-      const f = slice[idx];
-      onStatus(idx, '读取中…', 'busy');
-      let bytes;
-      if (f.bytes) bytes = f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes);
-      else bytes = new Uint8Array(await f.arrayBuffer());
-      onStatus(idx, '上传中(' + (start + 1 + k) + '/' + total + ')…', 'busy');
-      const sha = await ghCreateBlob(bytes);
-      tree.push({ path: 'wallpapers/' + prepared[idx], mode: '100644', type: 'blob', sha: sha });
-      const it = buildItem(prepared[idx], titleAll || null);
-      it.size = bytes.byteLength || f.size || null;
-      if (f.coverName && f.coverBytes) {
-        const coverSha = await ghCreateBlob(f.coverBytes instanceof Uint8Array ? f.coverBytes : new Uint8Array(f.coverBytes));
-        tree.push({ path: 'wallpapers/' + f.coverName, mode: '100644', type: 'blob', sha: coverSha });
-        it.cover = 'wallpapers/' + f.coverName;
-      }
-      if (f.itemExtra) Object.assign(it, f.itemExtra);
-      committed.push(it);
+  /* ② 逐个上传 blob（封面一并备好） */
+  const blobs = [], covers = [];
+  for (let i = 0; i < total; i++) {
+    const f = list[i];
+    onStatus(i, '上传中(' + (i + 1) + '/' + total + ')…', 'busy');
+    let bytes;
+    if (f.bytes) bytes = f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes);
+    else bytes = new Uint8Array(await f.arrayBuffer());
+    blobs.push({ sha: await ghCreateBlob(bytes), size: bytes.byteLength });
+    if (f.coverName && f.coverBytes) {
+      const cb = f.coverBytes instanceof Uint8Array ? f.coverBytes : new Uint8Array(f.coverBytes);
+      covers[i] = { name: f.coverName, sha: await ghCreateBlob(cb) };
     }
-    await ghCommitTree({ baseSha: ref.baseSha, baseTree: ref.baseTree, tree, message: '上传壁纸 ' + (start + 1) + '~' + (start + tree.length) + ' / ' + total });
-    for (let k = 0; k < slice.length; k++) onStatus(start + k, '已提交', 'ok');
   }
+
+  /* ③ 一次性提交整棵树：只产生 1 个 commit。
+   *    旧版每 4 个一批，第 2 批用 slice[全局索引] 取到 undefined 直接报错，
+   *    而且多个 commit 会和自动重建清单的 Actions 抢 main 引用（422）。 */
+  const buildTree = () => {
+    const tree = [];
+    for (let i = 0; i < total; i++) {
+      tree.push({ path: 'wallpapers/' + prepared[i], mode: '100644', type: 'blob', sha: blobs[i].sha });
+      if (covers[i]) tree.push({ path: 'wallpapers/' + covers[i].name, mode: '100644', type: 'blob', sha: covers[i].sha });
+    }
+    return tree;
+  };
+  let ref = await ghRef(), done = false;
+  for (let attempt = 0; attempt < 3 && !done; attempt++) {
+    try {
+      await ghCommitTree({ baseSha: ref.baseSha, baseTree: ref.baseTree, tree: buildTree(), message: '存入壁纸库 ' + total + ' 个文件' });
+      done = true;
+    } catch (e) {
+      if (!/409|422|conflict|does not match|fast forward/i.test(String(e)) || attempt === 2) throw e;
+      await new Promise(r => setTimeout(r, 1200));
+      ref = await ghRef();   /* main 被别的提交推进了，重取基线再试 */
+    }
+  }
+
+  /* ④ 组装条目 + 落本机兜底（重进页面立即可见） */
+  const committed = [];
+  for (let i = 0; i < total; i++) {
+    const f = list[i];
+    const it = buildItem(prepared[i], titleAll || null);
+    it.size = blobs[i].size || f.size || null;
+    if (covers[i]) it.cover = 'wallpapers/' + covers[i].name;
+    if (f.itemExtra) Object.assign(it, f.itemExtra);
+    committed.push(it);
+    onStatus(i, '已提交', 'ok');
+  }
+  localItemsAdd(committed);
   return committed;
 }
 

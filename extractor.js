@@ -244,22 +244,32 @@ function exResultHTML(r, plat) {
   /* 自家仓库里的文件名常带 # / ? / 中文，直接塞进 src 会被当成锚点/查询截断 → 全 404。
    * mediaOf()（app.js）做 encodeURI + %23/%3F 转义，绝对 URL 原样返回。 */
   const mu = (u) => (typeof mediaOf === 'function') ? mediaOf(u) : String(u || '');
-  let body = '';
+  let body = '', total = 0;
   if (r.kind === 'video') {
-    body = `<video class="ex-video" controls playsinline preload="metadata" ${r.cover ? `poster="${escAttr(mu(r.cover))}"` : ''} src="${escAttr(mu(r.play))}"></video>`;
+    total = 1;
+    body = `<video class="ex-video" controls playsinline preload="metadata" ${r.cover ? `poster="${escAttr(mu(r.cover))}"` : ''} src="${escAttr(mu(r.play))}"></video>
+      <label class="ex-pickone"><input type="checkbox" class="ex-chk" data-i="0" checked> 把这个视频存进壁纸库</label>`;
   } else {
     const imgs = (r.images || []).slice(0, 30);
-    body = `<div class="ex-imggrid">` + imgs.map((u, i) =>
-      `<div class="iw"><img loading="lazy" src="${escAttr(mu(u))}" alt=""><button class="dl" data-i="${i}" title="下载这张">↓</button></div>`
-    ).join('') + `</div>`;
+    total = imgs.length;
+    body = `<div class="ex-pickbar">
+        <label><input type="checkbox" id="ex-all" checked> 全选</label>
+        <button type="button" class="ex-clear" id="ex-none">清空</button>
+        <span id="ex-picked">已选 ${total} 项</span>
+        <span class="ex-pickhint">点图片或左上角方框勾选</span>
+      </div>
+      <div class="ex-imggrid">` + imgs.map((u, i) =>
+        `<div class="iw sel"><label class="iw-pick"><input type="checkbox" class="ex-chk" data-i="${i}" checked></label>
+           <img loading="lazy" src="${escAttr(mu(u))}" alt=""><button class="dl" data-i="${i}" title="下载这张">↓</button></div>`
+      ).join('') + `</div>`;
   }
   const cnt = r.kind === 'video' ? '视频' : ((r.images || []).length + ' 张图');
   return `
     <div class="ex-title">${title}</div>
-    <div class="hint">${esc(plat ? plat.name : '')} · ${cnt}${r.fromCache ? ' · 命中自家缓存' : ''}</div>
+    <div class="hint">${esc(plat ? plat.name : '')} · ${cnt}${r.fromCache ? ' · 命中自家缓存' : ''} · 先勾选要保存的内容</div>
     ${body}
     <div class="ex-actions">
-      <button class="btn primary" id="ex-save">存入壁纸库</button>
+      <button class="btn primary" id="ex-save">存入壁纸库（${total}）</button>
       <button class="btn ghost" id="ex-dlall">${r.kind === 'video' ? '下载视频' : '下载全部'}</button>
       <button class="btn ghost" id="ex-open">打开原链接</button>
     </div>
@@ -271,6 +281,30 @@ function renderExtract(r, plat, url) {
   const box = $id('ex-result');
   box.classList.remove('hidden');
   box.innerHTML = exResultHTML(r, plat);
+
+  /* 勾选：默认全选（保留一键全存），可逐项取消；按钮实时显示已选数量 */
+  const chks = Array.from(box.querySelectorAll('.ex-chk'));
+  const all = $id('ex-all');
+  const syncPick = () => {
+    const n = chks.filter(c => c.checked).length;
+    const b = $id('ex-save');
+    if (b) { b.disabled = n === 0; b.textContent = '存入壁纸库（' + n + '）'; }
+    const p = $id('ex-picked'); if (p) p.textContent = '已选 ' + n + ' 项';
+    chks.forEach(c => { const w = c.closest('.iw'); if (w) w.classList.toggle('sel', c.checked); });
+    if (all) { all.checked = n > 0 && n === chks.length; all.indeterminate = n > 0 && n < chks.length; }
+  };
+  chks.forEach(c => c.addEventListener('change', syncPick));
+  if (all) all.addEventListener('change', () => { chks.forEach(c => { c.checked = all.checked; }); syncPick(); });
+  const none = $id('ex-none');
+  if (none) none.addEventListener('click', () => { chks.forEach(c => { c.checked = false; }); syncPick(); });
+  /* 手机上点图片本身也能切换选中，比小方框好按 */
+  box.querySelectorAll('.ex-imggrid .iw img').forEach(img => {
+    img.addEventListener('click', () => {
+      const c = img.parentElement && img.parentElement.querySelector('.ex-chk');
+      if (c) { c.checked = !c.checked; syncPick(); }
+    });
+  });
+  syncPick();
 
   box.querySelectorAll('.ex-imggrid .dl').forEach(b => {
     b.onclick = () => {
@@ -316,15 +350,25 @@ async function saveToLibrary(r, plat) {
   const btn = $id('ex-save');
   const prog = $id('ex-prog');
   const old = btn.textContent;
-  btn.disabled = true;
+  const reset = () => { btn.disabled = false; btn.textContent = old; if (prog) prog.textContent = ''; };
   const set = (t) => { btn.textContent = t; if (prog) prog.textContent = t; };
+  const list = r.kind === 'video' ? [r.play] : (r.images || []).slice(0, 30);
+  /* 只保存勾选的项；老版本结果没有勾选框时退化为全存 */
+  const box = $id('ex-result');
+  const chks = box ? Array.from(box.querySelectorAll('.ex-chk')) : [];
+  const picked = chks.length
+    ? chks.filter(c => c.checked).map(c => Number(c.dataset.i || 0))
+    : list.map((_, i) => i);
+  if (!picked.length) { toast('先勾选要保存的内容', 'warn'); return; }
+  btn.disabled = true;
   try {
-    const list = r.kind === 'video' ? [r.play] : (r.images || []).slice(0, 30);
     if (!list.length) throw new Error('没有可保存的内容');
     const entries = [];
-    for (let i = 0; i < list.length; i++) {
-      set('取回 ' + (i + 1) + ' / ' + list.length + ' …');
+    for (let n = 0; n < picked.length; n++) {
+      const i = picked[n];
+      set('取回 ' + (n + 1) + ' / ' + picked.length + ' …');
       const u = list[i];
+      if (!u) continue;
       let bytes = null;
       try {
         const fetchURL = (typeof mediaOf === 'function') ? mediaOf(u) : u;
@@ -333,27 +377,45 @@ async function saveToLibrary(r, plat) {
       } catch (e) { /* 单张失败跳过 */ }
       if (!bytes || !bytes.length) continue;
       const ext = guessExt(u);
-      const nm = sanitizeName((r.title || (plat ? plat.name : '解析')) + (list.length > 1 ? '-' + (i + 1) : '') + ext);
+      /* 入库文件名不用作品标题：sanitizeName 会把名字截到 80 字符，
+       * 长标题会把 "-N.jpg" 全切掉 → 多张图同名互相覆盖，最后只剩 1 张；
+       * 标题里还常含数学斜体等非 BMP 字符，按 UTF-16 截断会切出孤立代理项。
+       * 改用「平台_链接短码_序号」：短、稳、唯一；可读标题放 itemExtra。 */
+      const tag = String(parseCacheKey(curExtractURL || r.title || '') || 'wp')
+        .replace(/[^a-z0-9]/gi, '').slice(0, 14) || 'wp';
+      const nm = sanitizeName((plat ? plat.name : '解析') + '_' + tag +
+        (list.length > 1 ? '_' + (i + 1) : '') + ext);
+      const fullTitle = String(r.title || (plat ? plat.name + ' 内容' : '解析结果'))
+        .replace(/\s+/g, ' ').trim().slice(0, 60);
       entries.push({
         name: nm,
         bytes,
         size: bytes.byteLength,
-        itemExtra: i === 0 ? { title: sanitizeName(r.title || (plat ? plat.name + ' 内容' : '解析结果')), cat: catOf(r.title || ''), kind: r.kind === 'video' ? 'video' : 'image', gif: false } : undefined,
+        itemExtra: {
+          title: fullTitle + (list.length > 1 ? '（' + (i + 1) + '）' : ''),
+          cat: catOf(r.title || ''),
+          kind: r.kind === 'video' ? 'video' : 'image',
+          gif: false,
+        },
       });
     }
-    if (!entries.length) throw new Error('图片跨域取回失败（平台 CDN 拒绝），可逐张点「↓」下载后手动上传');
+    if (!entries.length) throw new Error('选中的内容跨域取回失败（平台 CDN 拒绝），可逐张点「↓」下载后手动上传');
     set('提交中…');
     const committed = await WPGH.importEntries(entries, {
       onStatus: (idx, text) => set('提交 ' + (idx + 1) + '/' + entries.length),
     });
-    try { committed.forEach(it => allItems.unshift(it)); renderAll(); } catch (e) {}
-    toast('已存入壁纸库（' + committed.length + ' 个文件）', 'ok');
+    try {
+      const urls = new Set(committed.map(x => x.url));
+      allItems = allItems.filter(x => !urls.has(x.url));
+      committed.forEach(it => allItems.unshift(it));
+      renderAll();
+    } catch (e) {}
+    toast('已存入壁纸库（' + committed.length + ' 项），重进页面也能看到', 'ok');
     set('已入库 ✓');
-    setTimeout(() => { btn.disabled = false; btn.textContent = old; if (prog) prog.textContent = ''; }, 2500);
+    setTimeout(reset, 2500);
   } catch (e) {
     toast('入库失败：' + (e.message || e), 'bad');
-    btn.disabled = false; btn.textContent = old;
-    if (prog) prog.textContent = '';
+    reset();
   }
 }
 

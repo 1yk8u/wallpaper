@@ -170,7 +170,7 @@ async function raceJSON(chans) {
 async function lightResultGet(key, ms) {
   const cfg = ghCfg();
   const p = await parsedPath(key), bust = Date.now();
-  ms = ms || 9000;
+  ms = ms || 12000;
   const chans = [];
   if (cfg && cfg.pat) chans.push(() => fetchCacheJSON(
     'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
@@ -186,12 +186,21 @@ async function lightResultGet(key, ms) {
 /* ---------- L3 自家中转：寄单 + 轮询 ---------- */
 async function relayDispatch(url, key) {
   const cfg = WPGH.cfg;
-  const r = await withTimeout(fetch(
-    'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) + '/dispatches', {
-      method: 'POST',
-      headers: { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + cfg.pat },
-      body: JSON.stringify({ event_type: 'parse-request', client_payload: { url: url, key: key } }),
-    }), 15000, '派单超时（网络不通或令牌失效）');
+  let r;
+  try {
+    r = await withTimeout(fetch(
+      'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) + '/dispatches', {
+        method: 'POST',
+        headers: { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + cfg.pat },
+        body: JSON.stringify({ event_type: 'parse-request', client_payload: { url: url, key: key } }),
+      }), 30000, '派单超时');
+  } catch (e) {
+    /* 手机网络抖动时响应慢，但 GitHub 往往已经收到派单并跑起了 Actions。
+     * 这类「软失败」不能当失败处理，继续轮询照样能拿到结果。 */
+    const soft = new Error('派单响应慢（可能已寄出，继续等仓库结果）');
+    soft.soft = true;
+    throw soft;
+  }
   if (r.status !== 204) throw new Error('派单失败 HTTP ' + r.status + '（令牌可能已失效）');
 }
 async function relayPoll(key, since, onTick) {
@@ -410,8 +419,13 @@ async function startExtract() {
     /* L3 自家中转 */
     const since = Date.now();
     exStatus('📮 寄给自家仓库代抓中（GitHub Actions）…', '');
-    await relayDispatch(url, key);
-    exStatus('📮 已寄出，仓库正在抓…', '');
+    try {
+      await relayDispatch(url, key);
+      exStatus('📮 已寄出，仓库正在抓…', '');
+    } catch (e) {
+      if (!e.soft) throw e;   /* 软超时：继续轮询，GitHub 多半已在抓 */
+      exStatus('📮 派单响应慢，仓库可能已在抓，继续等结果…', '');
+    }
     const got = await relayPoll(key, since, (i, sec) => exStatus('📮 仓库抓取中… ' + i + ' 轮（' + sec + 's），页面别关', ''));
     if (!got) throw new Error('代抓约 90 秒还没出结果（平台可能风控）。链接已入队，稍后再点一次「开始解析」通常就命中缓存');
     if (got.err) throw new Error('自家中转：' + got.err);

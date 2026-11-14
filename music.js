@@ -148,7 +148,9 @@ const Music = (() => {
         <div class="mu-media">${media}</div>
       </div>
       <div class="mu-actions">
-        <button type="button" class="mu-btn-dl" ${s.audio ? '' : 'disabled'}>下载</button>
+        <button type="button" class="mu-btn-dl" ${s.audio ? '' : 'disabled'}>下载音乐</button>
+        <button type="button" class="mu-btn-vid">下载视频</button>
+        <button type="button" class="mu-btn-save" ${s.audio ? '' : 'disabled'}>存到壁纸库</button>
         <button type="button" class="mu-btn-open">打开原曲</button>
       </div>
     </div>`;
@@ -237,11 +239,105 @@ const Music = (() => {
     setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 4500);
   }
 
+  /* ===== 下载视频（MV / 现场版）=====
+   * 四家音乐平台的 MV 直链接口已全部封死（实测 404/400/参数错误），
+   * 所以「视频版」交给视频工具站下载：这里自动复制歌名并打开工具页，
+   * 用户粘贴搜索即可拿到 MV，解析完切回本页还能入库。 */
+  async function downloadVideo(s, btn) {
+    const q = ((s.title || '').trim() + ' ' + (s.artist && !/官方|打开原曲/.test(s.artist) ? s.artist : '')).trim() + ' MV';
+    let copied = false;
+    try { await navigator.clipboard.writeText(q); copied = true; } catch (e) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = q; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        copied = document.execCommand('copy'); ta.remove();
+      } catch (e2) {}
+    }
+    const target = 'https://vtool.tv/zh';
+    const win = window.open(target, '_blank');
+    if (win) { try { win.opener = null; } catch (e) {} }
+    const old = btn.textContent;
+    btn.textContent = copied ? '已打开工具' : '打开工具';
+    setTimeout(() => { btn.textContent = old; }, 3000);
+    /* 卡片上写清楚这一步为什么需要工具站 */
+    const row = btn.closest('.mu-item');
+    if (row && !row.querySelector('.mu-vidnote')) {
+      const note = document.createElement('div');
+      note.className = 'mu-vidnote';
+      note.innerHTML = 'MV / 现场版在工具页下载：歌名已复制，粘贴搜索即可。<a href="https://www.hellotik.app/zh" target="_blank" rel="noopener">换 HelloTik</a>';
+      const info = row.querySelector('.mu-info');
+      if (info) info.appendChild(note);
+    }
+  }
+
+  /* ===== 存到壁纸库（进「音乐」分类，永久保存） ===== */
+  async function grabAudio(s) {
+    if (s.blobUrl) {
+      try { const r = await fetch(s.blobUrl); if (r.ok) return await r.blob(); } catch (e) {}
+    }
+    for (const u of [s.audio, s.audioAlt, s.neId ? NE + '/song/media/outer/url?id=' + s.neId + '.mp3' : '']) {
+      if (!u) continue;
+      try {
+        const r = await fetch(u, { signal: AbortSignal.timeout(60000) });
+        if (!r.ok) continue;
+        const b = await r.blob();
+        if (b && b.size > 20000) return b;
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  async function saveToLibrary(s, btn) {
+    if (typeof WPGH === 'undefined' || !WPGH.cfg || !WPGH.cfg.pat) {
+      btn.textContent = '连接不可用';
+      setTimeout(() => { btn.textContent = '存到壁纸库'; }, 2500);
+      return;
+    }
+    const old = btn.textContent;
+    btn.disabled = true; btn.textContent = '获取中…';
+    const blob = await grabAudio(s);
+    if (!blob) {
+      btn.textContent = '音频没取到';
+      setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3000);
+      return;
+    }
+    btn.textContent = '提交中…';
+    try {
+      const name = '音乐_' + safeName(s);
+      const title = ((s.title || '').trim() + (s.artist && !/官方|打开原曲/.test(s.artist) ? ' - ' + s.artist : '')).trim() || '音乐';
+      const committed = await WPGH.importEntries([{
+        name,
+        bytes: new Uint8Array(await blob.arrayBuffer()),
+        size: blob.size,
+        itemExtra: { title, cat: '音乐', kind: 'audio', gif: false },
+      }], {
+        onStatus: (i, text) => { btn.textContent = text.slice(0, 8); },
+      });
+      try { committed.forEach(it => allItems.unshift(it)); } catch (e) {}
+      try { if (typeof renderAll === 'function') renderAll(); } catch (e) {}
+      if (typeof toast === 'function') toast('音乐已存入壁纸库', 'ok');
+      btn.textContent = '已入库 ✓';
+      setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
+    } catch (e) {
+      btn.textContent = '入库失败';
+      setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3000);
+      if (typeof toast === 'function') toast('入库失败：' + (e.message || e), 'bad');
+    }
+  }
+
   function bindCard(row, s) {
     const dl = row.querySelector('.mu-btn-dl');
     if (dl) {
       dl.disabled = !s.audio;
       dl.onclick = () => download(s, dl);
+    }
+    const vd = row.querySelector('.mu-btn-vid');
+    if (vd) vd.onclick = () => downloadVideo(s, vd);
+    const sv = row.querySelector('.mu-btn-save');
+    if (sv) {
+      sv.disabled = !s.audio;
+      sv.onclick = () => saveToLibrary(s, sv);
     }
     const op = row.querySelector('.mu-btn-open');
     if (op) op.onclick = () => window.open(s.page || s.url, '_blank', 'noopener');
@@ -257,7 +353,7 @@ const Music = (() => {
         const p = PLATS.find(x => x.key === s.platform) || PLATS[0];
         return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(s)}</div>`;
       }).join('') + '</div>' +
-      '<div class="mu-foot">四平台均可下载 MP3。QQ音乐 / 酷狗 / 汽水官方未开放直链，下载的是按歌名匹配的网易云同名版本（卡片会标注）；网易云链接为原曲。版权归原平台及权利人所有，仅用于个人试听收藏。</div>';
+      '<div class="mu-foot">四平台均可直接解析并下载 MP3；点【下载音乐】存到设备，点【存到壁纸库】永久保存并出现在「壁纸 → 音乐」分类。【下载视频】会打开视频工具站（歌名已复制），在那边下载 MV / 现场版。QQ音乐 / 酷狗 / 汽水官方未开放直链，音频为按歌名匹配的网易云同名版本（卡片会标注）。版权归原平台及权利人所有，仅用于个人试听收藏。</div>';
     box.querySelectorAll('.mu-row').forEach((row, i) => { bindCard(row, songs[i]); attachAudioFallback(row, songs[i]); });
   }
 
@@ -458,15 +554,19 @@ const Music = (() => {
 .mu-item audio{width:100%;height:32px;display:block}
 .mu-noaudio{font-size:11px;color:#98a1b0;background:#f5f7fb;border-radius:7px;padding:4px 8px;display:inline-block}
 .mu-match{display:inline-block;margin-top:4px;font-size:10px;color:#b45309;background:#fffbeb;border-radius:6px;padding:2px 6px}
-.mu-actions{display:flex;flex-direction:column;gap:6px;flex:none}
-.mu-actions button{border:none;border-radius:9px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.mu-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px;flex:none;width:136px}
+.mu-actions button{border:none;border-radius:9px;padding:7px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
 .mu-btn-dl{background:var(--mc);color:#fff}
+.mu-btn-vid{background:#eef4ff;color:#2563eb}
+.mu-btn-save{background:#fff7ed;color:#c2410c}
 .mu-btn-open{background:#f1f4f9;color:#5b6472}
+.mu-vidnote{margin-top:8px;font-size:11px;line-height:1.6;background:#fff7ed;color:#9a4b00;border-radius:8px;padding:7px 9px}
+.mu-vidnote a{color:#c2410c;font-weight:700;margin-left:4px}
 .mu-actions button:disabled{opacity:.4;cursor:not-allowed}
 .mu-foot{font-size:11px;color:#9aa3b2;margin-top:10px;line-height:1.6}
 .mu-err{background:#fef2f2;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:12px}
 .hidden{display:none!important}
-@media(max-width:520px){.mu-item{gap:8px;padding:8px}.mu-cover{width:52px;height:52px}.mu-actions button{padding:6px 8px;font-size:11px}}
+@media(max-width:520px){.mu-item{gap:8px;padding:8px}.mu-cover{width:52px;height:52px}.mu-actions{width:124px}.mu-actions button{padding:6px 4px;font-size:10.5px}}
 `;
     document.head.appendChild(s);
   }

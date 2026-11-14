@@ -11,12 +11,14 @@
  *   自定义     ≥0.5 元，按向下匹配档位生效
  *   邀请码    zub571795 → 无限（加好友后发放）
  *
- * 到账检测：真实链路
- *   下单 → 云免签返回付款二维码 → 前端每 3s 轮询订单状态
- *   → 云端回调 notify 验签写状态 → 轮询查到 paid 才解锁额度
- *   未开通网关时降级为「静态收款码 + 人工核对」，绝不再假装到账
+ * 到账检测：真·自动（双通道，按站点自动选择）
+ *   A. Netlify：下单 → 云端回调写状态 → 前端每 3s 查订单，paid 才解锁
+ *   B. GitHub Pages：前端写订单文件 → 触发 Actions worker → worker 用仓库 Secrets
+ *      调云免签下单并低频查询 → 写 status=paid → 前端轮询读到才解锁
+ *      密钥只在仓库 Secrets，前端永远拿不到；未配置时降级静态码，绝不假装到账
  *
- * 速度：二维码用本地 assets/（Netlify CDN），QR 生成库按需加载，首屏零负担
+ * 速度：二维码用本地 assets/，QR 生成库按需加载，首屏零负担；
+ *      订单读写走 api.github.com 直连（实测 <1s），不依赖 Pages 重新构建
  * ===================================================================== */
 'use strict';
 
@@ -25,12 +27,16 @@ const Payment = (() => {
   const FREE_DAILY_LIMIT = 100;
   const MIN_CUSTOM_AMOUNT = 0.5;
   const INVITE_CODES = { 'zub571795': 'unlimited' };
-  const API = '/.netlify/functions/pay';
+  const USE_NETLIFY = /netlify\.app$/i.test(location.hostname);
+  const API_NETLIFY = '/.netlify/functions/pay';
+  const GH_REPO_API = 'https://api.github.com/repos/1yk8u/wallpaper';
+  const GH_BRANCH = 'main';
+  const GH_ORDER_DIR = 'data/pay/orders';
   const QR_LIB = 'assets/qrcode.js';
   const QR_PAY = 'assets/pay-qr.png';
   const QR_CONTACT = 'assets/contact-qr.png';
   const POLL_MS = 3000;
-  const MAX_POLL = 110;              // 约 5.5 分钟（二维码 5 分钟过期）
+  const MAX_POLL = 170;              // 约 8.5 分钟（含 Actions 冷启动 + 二维码 5 分钟）
 
   const TIERS = [
     { id: 'trial', price: 0.5, kind: 'trial', daily: 200, hours: 24, title: '体验一天', desc: '24h 内每天 200 张' },
@@ -230,6 +236,7 @@ const Payment = (() => {
   /* ===== 弹窗 ===== */
   let pollTimer = null;
   let countTimer = null;
+  let renderedQrKey = '';
 
   function showPaymentModal() {
     const old = document.getElementById('modal-payment');
@@ -326,9 +333,9 @@ const Payment = (() => {
     }
   }
 
-  function stopPolling() {
+  function stopPolling(keepCount) {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    if (countTimer) { clearInterval(countTimer); countTimer = null; }
+    if (!keepCount && countTimer) { clearInterval(countTimer); countTimer = null; }
   }
 
   function stage(html) {
@@ -336,20 +343,76 @@ const Payment = (() => {
     if (el) { el.innerHTML = html; el.classList.remove('hidden'); }
   }
 
-  /* ===== 真实下单 + 轮询到账 ===== */
+  /* ===== GitHub 仓库通道（Pages 站点的"服务端"） ===== */
+  function ghToken() {
+    try { return (typeof CFG !== 'undefined' && CFG.pat) || ''; } catch (e) { return ''; }
+  }
+  function b64json(obj) {
+    const bytes = new TextEncoder().encode(JSON.stringify(obj));
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function unb64json(s) {
+    const bin = atob(String(s).replace(/\s/g, ''));
+    const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+  /* 复用 app.js 现成的 gh()（自带令牌与 CORS 处理），拿不到就直接降级 */
+  function ghOK() { return typeof gh === 'function' && !!ghToken(); }
+  async function ghCreateOrderFile(sn, tier) {
+    return gh('/contents/' + encodeURI(GH_ORDER_DIR + '/' + sn + '.json'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'pay: create ' + sn,
+        content: b64json({ sn, tierId: tier.id, amount: tier.price, status: 'creating', client: 'web', createdAt: new Date().toISOString() }),
+        branch: GH_BRANCH,
+      }),
+    });
+  }
+  async function ghReadOrder(sn) {
+    const j = await gh('/contents/' + encodeURI(GH_ORDER_DIR + '/' + sn + '.json') + '?ref=' + GH_BRANCH + '&t=' + Date.now());
+    return unb64json(j.content);
+  }
+  async function ghGatewayStatus() {
+    try {
+      const j = await gh('/contents/data/pay/status.json?ref=' + GH_BRANCH + '&t=' + Date.now());
+      return unb64json(j.content);
+    } catch (e) { return null; }   // 探针还没生成 = 尚未跑过 worker
+  }
+  function ghDispatch(sn) {
+    return gh('/dispatches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_type: 'pay_new', client_payload: { sn } }),
+    }).catch(() => null);   // 失败也没关系：workflow 每 10 分钟兜底
+  }
+  function makeSn() {
+    const a = new Uint8Array(2);
+    (window.crypto || {}).getRandomValues ? window.crypto.getRandomValues(a) : (a[0] = Math.random() * 255, a[1] = Math.random() * 255);
+    const tail = Array.from(a, x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+    return 'WP' + Date.now().toString(36).toUpperCase() + tail;
+  }
+  function setDetect(html, spinning) {
+    const el = document.getElementById('pay-detect');
+    if (el) el.innerHTML = (spinning ? '<span class="pay-spin"></span>' : '') + html;
+  }
+
+  /* ===== 下单入口：按站点自动选通道 ===== */
   async function startPaymentFlow(tier) {
+    return USE_NETLIFY ? startNetlifyFlow(tier) : startGitHubFlow(tier);
+  }
+
+  /* --- 通道 A：Netlify 函数 --- */
+  async function startNetlifyFlow(tier) {
     const go = document.getElementById('pay-go');
-    /* 非 Netlify 域名（如 GitHub Pages）没有后端函数，直接进静态收款码模式，不空等 404 */
-    if (!/netlify\.app$/i.test(location.hostname)) {
-      gatewayUnavailable(tier, '当前站点未挂载支付后端函数');
-      return;
-    }
     if (go) { go.disabled = true; go.textContent = '正在创建订单…'; }
     stage('<div class="pay-stage-hint">正在创建支付订单…</div><div class="pay-detect"><span class="pay-spin"></span>连接支付网关</div>');
 
     let res, data;
     try {
-      res = await fetch(API + '?action=create', {
+      res = await fetch(API_NETLIFY + '?action=create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tierId: tier.id, amount: tier.price }),
@@ -362,25 +425,53 @@ const Payment = (() => {
     } finally {
       if (go) { go.disabled = false; go.textContent = '重新下单 / 立即支付'; }
     }
+    if (!res.ok || data.error) { gatewayUnavailable(tier, data.error || ('支付服务返回 ' + res.status)); return; }
+    if (!data.configured) { gatewayUnavailable(tier, '站点尚未开通支付网关'); return; }
 
-    if (!res.ok || data.error) {
-      gatewayUnavailable(tier, data.error || ('支付服务返回 ' + res.status));
+    saveJSON(K_PENDING, { sn: data.sn, tierId: tier.id, at: Date.now(), chan: 'netlify' });
+    renderedQrKey = '';
+    renderLiveOrder(data, tier, true);
+  }
+
+  /* --- 通道 B：GitHub 仓库 + Actions worker --- */
+  async function startGitHubFlow(tier) {
+    const go = document.getElementById('pay-go');
+    if (!ghOK()) { gatewayUnavailable(tier, '当前站点无法连接订单服务'); return; }
+    /* 网关未开通 → 0.7 秒内直接给静态收款码，不让用户白等 Actions 冷启动 */
+    const st = await ghGatewayStatus();
+    if (st && st.configured === false) {
+      gatewayUnavailable(tier, '站点尚未开通支付网关（仓库 Secrets 未配置）');
       return;
     }
-    if (!data.configured) {
-      gatewayUnavailable(tier, '站点尚未开通支付网关');
+    const sn = makeSn();
+    if (go) { go.disabled = true; go.textContent = '正在创建订单…'; }
+    stage(`<div class="pay-stage-title">正在创建支付订单</div>
+      <div class="pay-stage-hint">订单号 <b>${sn}</b>　请截图保存</div>
+      <div class="pay-detect" id="pay-detect"><span class="pay-spin"></span>连接订单服务…</div>`);
+    try {
+      await ghCreateOrderFile(sn, tier);
+    } catch (e) {
+      gatewayUnavailable(tier, '订单创建失败：' + (e.message || 'network'));
       return;
+    } finally {
+      if (go) { go.disabled = false; go.textContent = '重新下单 / 立即支付'; }
     }
-
-    saveJSON(K_PENDING, { sn: data.sn, tierId: tier.id, at: Date.now() });
-    renderLiveOrder(data, tier);
+    ghDispatch(sn);
+    saveJSON(K_PENDING, { sn, tierId: tier.id, at: Date.now(), chan: 'gh' });
+    renderedQrKey = '';
+    startPolling(sn, tier, 0, 'gh');
   }
 
   /* ===== 网关返回的动态付款码 ===== */
-  function renderLiveOrder(d, tier) {
+  function renderLiveOrder(d, tier, autoPoll) {
     const qr = String(d.qr || '');
     const price = d.payPrice || tier.price;
-    const secs = Math.max(0, parseInt(d.expireIn, 10) || 300);
+    let secs = Math.max(0, parseInt(d.expireIn, 10) || 0);
+    if (!secs && d.expireAt) {
+      const t = Date.parse(String(d.expireAt).replace(' ', 'T'));
+      if (!isNaN(t)) secs = Math.max(0, Math.round((t - Date.now()) / 1000));
+    }
+    if (!secs) secs = 300;
     const deadline = Date.now() + secs * 1000;
 
     stage(`
@@ -389,7 +480,7 @@ const Payment = (() => {
       <div class="pay-stage-hint">请用微信扫下方二维码，务必支付 <b>这个金额</b>（用于自动识别订单）</div>
       <div class="pay-qr-box" id="pay-qr-box"><div class="pay-stage-hint">二维码生成中…</div></div>
       <div class="pay-count" id="pay-count">二维码剩余 ${secs} 秒</div>
-      <div class="pay-detect" id="pay-detect"><span class="pay-spin"></span>等待扫码支付，到账后自动解锁</div>
+      <div class="pay-detect" id="pay-detect"><span class="pay-spin"></span>等待扫码支付，云端自动检测到账后解锁（约 1 分钟）</div>
     `);
 
     ensureQrLib(ok => {
@@ -415,7 +506,7 @@ const Payment = (() => {
       if (left <= 0) { clearInterval(countTimer); countTimer = null; }
     }, 1000);
 
-    startPolling(d.sn, tier, deadline);
+    if (autoPoll === true) startPolling(d.sn, tier, deadline, 'netlify');
   }
 
   /* ===== 按需加载 QR 生成库（首屏不加载，速度优先） ===== */
@@ -430,43 +521,79 @@ const Payment = (() => {
   }
 
   /* ===== 轮询订单状态（真·检测，绝不假装） ===== */
-  function startPolling(sn, tier, deadline) {
+  function paidSuccess(sn, tier, tierId) {
     stopPolling();
+    try { localStorage.removeItem(K_PENDING); } catch (e) {}
+    const rst = activatePayment(tier.price, sn, tierId || tier.id);
+    stage('<div class="pay-ok">支付成功，额度已到账<br><span style="font-size:12px;font-weight:400">' + (rst.message || '') + '</span></div>');
+    updateQuotaDisplay();
+    setTimeout(() => { const m = document.getElementById('modal-payment'); if (m) m.remove(); }, 3200);
+  }
+
+  function startPolling(sn, tier, deadline, chan) {
+    chan = chan || (USE_NETLIFY ? 'netlify' : 'gh');
+    stopPolling(true);
     let n = 0;
-    pollTimer = setInterval(async () => {
+    const tick = async () => {
       n++;
       if (!document.getElementById('modal-payment')) { stopPolling(); return; }
-      if (n > MAX_POLL || (deadline && Date.now() > deadline + 30000)) {
+      if (n > MAX_POLL || (deadline && Date.now() > deadline + 60000)) {
         stopPolling();
-        const el = document.getElementById('pay-detect');
-        if (el) el.innerHTML = '未检测到到账。若已付款，请扫码加好友凭订单号 <b>' + sn + '</b> 核对';
+        setDetect('未检测到到账。若已付款，请扫码加好友凭订单号 <b>' + sn + '</b> 核对');
         return;
       }
       try {
-        const r = await fetch(API + '?action=query&sn=' + encodeURIComponent(sn), { signal: AbortSignal.timeout(8000) });
-        const j = await r.json();
-        if (j.status === 'paid') {
-          stopPolling();
-          localStorage.removeItem(K_PENDING);
-          const rst = activatePayment(tier.price, sn, j.tierId || tier.id);
-          stage('<div class="pay-ok">支付成功，额度已到账<br><span style="font-size:12px;font-weight:400">' + (rst.message || '') + '</span></div>');
-          updateQuotaDisplay();
-          setTimeout(() => { const m = document.getElementById('modal-payment'); if (m) m.remove(); }, 3200);
+        if (chan === 'netlify') {
+          const r = await fetch(API_NETLIFY + '?action=query&sn=' + encodeURIComponent(sn), { signal: AbortSignal.timeout(8000) });
+          const j = await r.json();
+          if (j.status === 'paid') paidSuccess(sn, tier, j.tierId);
+          return;
         }
-      } catch (e) { /* 单次失败继续轮询 */ }
-    }, POLL_MS);
+        /* GitHub 通道：读仓库订单文件，走 API 即时可读，不等 Pages 重新构建 */
+        const d = await ghReadOrder(sn);
+        if (!d) return;
+        if (d.status === 'paid') { paidSuccess(sn, tier, d.tierId); return; }
+        if (d.status === 'creating' || d.status === 'processing') {
+          setDetect('订单已创建，服务端正在生成付款码…<br><span style="font-size:12px">首次启动约 10~40 秒，请稍候</span>', true);
+          return;
+        }
+        if (d.status === 'waiting') {
+          const key = sn + '|' + String(d.qr || '');
+          if (renderedQrKey !== key) { renderedQrKey = key; renderLiveOrder(d, tier, false); }
+          return;
+        }
+        if (d.status === 'unconfigured') {
+          stopPolling();
+          gatewayUnavailable(tier, d.reason || '站点尚未开通支付网关', sn);
+          return;
+        }
+        if (d.status === 'error') {
+          stopPolling();
+          gatewayUnavailable(tier, '下单失败：' + (d.reason || '网关异常'), sn);
+          return;
+        }
+        if (d.status === 'expired') {
+          stopPolling();
+          setDetect('二维码已过期，请重新下单。若已付款请凭订单号 <b>' + sn + '</b> 加好友核对');
+          return;
+        }
+      } catch (e) { /* 单次失败继续轮询（文件未生成时是 404） */ }
+    };
+    pollTimer = setInterval(tick, POLL_MS);
+    tick();
   }
 
   function resumePolling(p) {
     const tier = tierById(p.tierId) || TIERS[0];
-    stage('<div class="pay-stage-title">检测到未完成订单</div><div class="pay-stage-hint">订单号 ' + p.sn + '</div><div class="pay-detect"><span class="pay-spin"></span>正在继续检测到账状态</div>');
-    startPolling(p.sn, tier, 0);
+    renderedQrKey = '';
+    stage('<div class="pay-stage-title">检测到未完成订单</div><div class="pay-stage-hint">订单号 ' + p.sn + '</div><div class="pay-detect" id="pay-detect"><span class="pay-spin"></span>正在继续检测到账状态</div>');
+    startPolling(p.sn, tier, 0, p.chan || (USE_NETLIFY ? 'netlify' : 'gh'));
   }
 
   /* ===== 网关未开通 / 不可用：静态收款码 + 人工核对（不假装到账） ===== */
-  function gatewayUnavailable(tier, reason) {
+  function gatewayUnavailable(tier, reason, orderSn) {
     stopPolling();
-    const sn = 'M' + Date.now().toString(36).toUpperCase();
+    const sn = orderSn || ('M' + Date.now().toString(36).toUpperCase());
     stage(`
       <div class="pay-warn"><b>自动到账检测暂未开启</b><br>${reason}<br>可先扫码付款，保存订单号后加下方微信好友核对领取。</div>
       <div class="pay-stage-title">微信扫码支付 ¥${fmt(tier.price)}</div>

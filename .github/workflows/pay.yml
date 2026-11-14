@@ -1,0 +1,37 @@
+# 支付订单自动到账 worker（GitHub Pages 站点的"服务端"）
+# 触发：前端下单时 repository_dispatch 立即触发 / 每 5 分钟兜底 / 手动
+# 密钥：仓库 Settings → Secrets and variables → Actions
+#   YMQ_APP_ID      云免签后台「系统设置」里的应用ID
+#   YMQ_APP_SECRET  云免签后台「系统设置」里的 app_secret
+#   YMQ_NOTIFY_URL  可选，云端回调地址（不填则靠低频辅助查询识别到账）
+name: 支付订单自动到账
+
+on:
+  repository_dispatch:
+    types: [pay_new]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: 只取 worker 脚本（不拉整个仓库，启动更快）
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/pay-worker.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: 处理订单
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YMQ_APP_ID: ${{ secrets.YMQ_APP_ID }}
+          YMQ_APP_SECRET: ${{ secrets.YMQ_APP_SECRET }}
+          YMQ_NOTIFY_URL: ${{ vars.YMQ_NOTIFY_URL }}
+        run: node scripts/pay-worker.mjs

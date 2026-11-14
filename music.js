@@ -176,6 +176,15 @@ const Music = (() => {
       } catch (e) { /* 换备用端点 */ }
     }
     s._fetching = false;
+    if (!s.blobUrl && row) {
+      const m = row.querySelector('.mu-media');
+      if (m && !m.querySelector('.mu-nodl')) {
+        const tip = document.createElement('span');
+        tip.className = 'mu-match mu-nodl';
+        tip.textContent = '该曲可能受版权限制，若下载失败请点「打开原曲」';
+        m.appendChild(tip);
+      }
+    }
   }
 
   function attachAudioFallback(row, s) {

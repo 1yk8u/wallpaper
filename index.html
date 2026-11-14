@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>壁纸库 · Wallpaper Hub</title>
-<meta name="description" content="在线壁纸库：静态壁纸、动态壁纸下载，支持抖音/快手/哔哩哔哩/小红书链接解析、网易云/QQ音乐/酷狗/汽水音乐分享链接解析与快手主页批量搬运">
+<meta name="description" content="在线壁纸库：静态壁纸、动态壁纸下载，支持抖音/快手/哔哩哔哩/小红书链接解析、网易云/汽水音乐分享链接解析与快手主页批量搬运">
 <meta name="theme-color" content="#e9e2cf">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -175,7 +175,7 @@
       <p class="fine">视频 / 图片解析由上述第三方站点完成；本站负责「结果回收 → 询问是否保存到壁纸库」这一步，入库走仓库直连、永久保存。音乐解析为本页自研。下载与版权请遵守对应平台规则，作品版权归原作者所有。</p>
     </div>
 
-    <!-- ===== 自研音乐解析（纯前端，四平台） ===== -->
+    <!-- ===== 自研音乐解析（纯前端，汽水 + 网易云） ===== -->
     <div class="card ex-card">
       <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
@@ -184,15 +184,15 @@
       <p class="ex-hint">粘贴分享链接或整段分享口令，本地立即出歌曲卡片，不用等云端</p>
       <div class="mu-plats" id="mu-plats"></div>
       <div class="row paste-row">
-        <input id="mu-link" type="text" placeholder="粘贴汽水音乐 / 网易云 / QQ音乐 / 酷狗的分享链接…" enterkeyhint="go" autocomplete="off" spellcheck="false">
+        <input id="mu-link" type="text" placeholder="粘贴汽水音乐 / 网易云的分享链接…" enterkeyhint="go" autocomplete="off" spellcheck="false">
       </div>
       <div class="row paste-row">
         <button id="mu-paste" class="btn primary big">快捷粘贴 · 自动解析</button>
         <button id="mu-go" class="btn ghost big">解析</button>
-        <button id="mu-test" class="btn ghost big">四平台自测</button>
+        <button id="mu-test" class="btn ghost big">双平台自测</button>
       </div>
       <div id="mu-result" class="mu-result hidden"></div>
-      <p class="fine">点上方平台图标可填入示例链接；点「四平台自测」一次跑完四家并给出识别 + 可下载结果。四家都能播放和一键下载 MP3：网易云为原曲，QQ音乐 / 酷狗 / 汽水按歌名匹配网易云同名版本（卡片会标注，不冒充原平台文件）。</p>
+      <p class="fine">点上方平台图标可填入示例链接；点「双平台自测」一次跑完两家并给出识别 + 可下载结果。两家都能播放和一键下载 MP3：网易云为原曲，汽水按歌名匹配网易云同名版本（卡片会标注，不冒充原平台文件）。</p>
     </div>
   </section>
 </main>
@@ -229,8 +229,8 @@
 
 <script src="core.js?v=20261107H"></script>
 <script src="app.js?v=20261114A"></script>
-<script src="parsehub.js?v=20261114C"></script>
-<script src="music.js?v=20261114B"></script>
+<script src="parsehub.js?v=20261114D"></script>
+<script src="music.js?v=20261114C"></script>
 <script src="payment.js?v=20261114A"></script>
 </body>
 </html>

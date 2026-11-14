@@ -61,7 +61,7 @@ const ParseHub = (() => {
 
   /* ===================== 结果回收 ===================== */
   /* 分享页 / 工具页链接：不算图片结果 */
-  const PAGE_RE = /(v\.douyin|iesdouyin|vtool\.tv|hellotik|b23\.tv|bilibili\.com\/video|xhslink|xiaohongshu\.com\/explore|music\.163|y\.qq\.com|kugou|qishui|kuaishou\.com\/(profile|short-video|f\/)|tiktok\.com\/@|youtube\.com\/watch|youtu\.be\/)/i;
+  const PAGE_RE = /(v\.douyin|iesdouyin|vtool\.tv|hellotik|b23\.tv|bilibili\.com\/video|xhslink|xiaohongshu\.com\/explore|music\.163|qishui|kuaishou\.com\/(profile|short-video|f\/)|tiktok\.com\/@|youtube\.com\/watch|youtu\.be\/)/i;
   /* 明确的媒体扩展名（可带 query / hash） */
   const MEDIA_RE = /\.(jpe?g|png|webp|gif|bmp|avif|heic|mp4|mov|m4v|webm)(?:[?#]|$)/i;
   /* 常见图片 CDN / 下载链路特征 */

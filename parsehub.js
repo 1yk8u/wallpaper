@@ -44,16 +44,19 @@ const ParseHub = (() => {
   function detect(url) {
     return PLATS.find(p => p.re.test(url)) || null;
   }
+  /* 实测结论（22 组参数 + 真浏览器）：这两个站都不读取任何 URL 查询参数，
+   * 带 ?url= 打开和不带参数打开完全一样 —— 输入框是空的，也不会自动解析。
+   * 链接只能靠「剪贴板」带过去：本站打开前写入，用户在工具页点一下「粘贴」。
+   * 保留 url 形参只为兼容旧调用与既有测试，此处故意不使用。 */
   function toolURL(kind, url, plat) {
-    const q = (url ? '?url=' + encodeURIComponent(url) : '');
     if (kind === 'vtool') {
       return plat && plat.vt
-        ? 'https://vtool.tv/zh/download/' + plat.vt + q
-        : 'https://vtool.tv/zh' + q;
+        ? 'https://vtool.tv/zh/download/' + plat.vt
+        : 'https://vtool.tv/zh';
     }
     return plat && plat.ht
-      ? 'https://www.hellotik.app/zh/' + plat.ht + q
-      : 'https://www.hellotik.app/zh' + q;
+      ? 'https://www.hellotik.app/zh/' + plat.ht
+      : 'https://www.hellotik.app/zh';
   }
 
   /* ===================== 结果回收 ===================== */
@@ -359,6 +362,54 @@ const ParseHub = (() => {
       : '已识别到链接 · 点下面任意工具，解析完切回来会自动弹保存确认';
   }
 
+  /* ===== 打开工具页后的引导 =====
+   * 对方站点不接收链接参数，浏览器同源策略也不允许本站往别的标签页里填内容，
+   * 所以「点一下粘贴」这一步省不掉。把步骤做成显眼的引导卡，避免用户以为点了没反应。 */
+  let currentLink = '';
+
+  function legacyCopy(text) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+  function copyLink(text) {
+    try {
+      const pr = navigator.clipboard && navigator.clipboard.writeText(text);
+      if (pr && typeof pr.then === 'function') return pr.then(() => true).catch(() => legacyCopy(text));
+    } catch (e) {}
+    return Promise.resolve(legacyCopy(text));
+  }
+  function showGuide(name, target, copied) {
+    const g = $('ph-guide');
+    if (!g) return;
+    g.innerHTML = `
+      <div class="ph-guide-head"><b>在工具页做 3 步，图片就会回到本页</b>
+        <span id="ph-guide-badge" class="ph-guide-badge${copied ? '' : ' bad'}">${copied ? '链接已复制 ✓' : '复制失败'}</span></div>
+      <ol class="ph-guide-steps">
+        <li>在 <b>${esc(name)}</b> 点输入框旁的 <b>「粘贴 / 一键粘贴」</b>（链接已放进剪贴板）</li>
+        <li>点 <b>「解析 / 解析视频」</b>，等图片出来</li>
+        <li>点 <b>「复制图片链接」</b>（或复制 / 保存图片本身），<b>切回本页</b> → 下方自动弹「是否保存在壁纸库」</li>
+      </ol>
+      <div class="ph-guide-why">为什么还要粘一下：这两个网站不接受网址参数，浏览器也禁止本站往第三方页面里填内容。所以本站能做的是「自动复制 + 自动接回结果」，中间那一下粘贴必须由你在工具页点。</div>
+      <div class="ph-guide-acts">
+        <button id="ph-guide-copy" class="btn primary" type="button">再复制一次链接</button>
+        <a id="ph-guide-open" class="btn ghost" target="_blank" rel="noopener" href="${esc(target)}">重新打开工具页 ↗</a>
+      </div>`;
+    g.classList.remove('hidden');
+    const c = $('ph-guide-copy');
+    if (c) c.addEventListener('click', async () => {
+      const ok = await copyLink(currentLink);
+      const b = $('ph-guide-badge');
+      if (b) { b.textContent = ok ? '链接已复制 ✓' : '复制失败'; b.classList.toggle('bad', !ok); }
+      msg(ok ? '链接已重新复制，去工具页点「粘贴」即可' : '复制失败，请长按最上面的输入框手动复制链接', ok ? 'ok' : 'warn');
+    });
+  }
+
   async function go(kind) {
     const raw = ($('ph-link') || {}).value || '';
     const url = extractURL(raw);
@@ -366,31 +417,32 @@ const ParseHub = (() => {
     const p = detect(url);
     const target = toolURL(kind, url, p);
     const name = kind === 'vtool' ? 'vtool.tv' : 'HelloTik';
+    currentLink = url;
 
-    let copied = false;
-    try { await navigator.clipboard.writeText(url); copied = true; } catch (e) {}
-    if (!copied) {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
-        document.body.appendChild(ta); ta.select();
-        copied = document.execCommand('copy');
-        ta.remove();
-      } catch (e) {}
-    }
+    /* 两个动作都要「用户点击」这个手势：
+     * 不能先 await 剪贴板再 window.open —— 手机 Safari 会丢手势，新窗口直接被拦。
+     * 也不能给 window.open 传 noopener 特性 —— 规范要求此时返回 null，
+     * 旧代码据此误判「弹窗被拦截」，其实窗口已经开了。 */
+    const copyP = copyLink(url);
+    const win = window.open(target, '_blank');
+    if (win) { try { win.opener = null; } catch (e) {} }
+    const copied = await copyP;
+
     /* 等待结果：清空上一批、记住当前剪贴板，避免把原链接误判成结果 */
     clear();
     armed = true;
     lastClip = url;
     autoTry = 0;
     state('已打开 ' + name + ' · 等待解析结果…', 'wait');
+    showGuide(name, target, copied);
 
-    const win = window.open(target, '_blank', 'noopener');
-    if (!win) {
-      msg('浏览器拦截了新窗口。链接已复制，请手动打开 ' + name + ' 粘贴，或允许本页弹窗后重试。', 'warn');
-      return;
+    if (!copied) {
+      msg('链接自动复制失败：请回到上方输入框长按复制链接，再到工具页粘贴。', 'warn');
+    } else if (!win) {
+      msg('新窗口可能被浏览器拦了：点引导卡里的「重新打开工具页」，链接已经复制好了。', 'warn');
+    } else {
+      msg('已打开 ' + name + (p ? '（' + p.n + ' 专属页）' : '') + '。按上面 3 步操作，切回本页就会自动弹出「是否保存到壁纸库」。', 'ok');
     }
-    msg('已打开 ' + name + (p ? '（' + p.n + ' 专属页）' : '') + '。粘贴解析后，复制图片链接再切回本页，下方会自动弹出「是否保存到壁纸库」。', 'ok');
   }
 
   /* ===================== 样式 ===================== */
@@ -416,6 +468,17 @@ const ParseHub = (() => {
 .ph-msg{font-size:12px;line-height:1.6;border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .ph-msg.ok{background:#f0fdf4;color:#15803d}
 .ph-msg.warn{background:#fff7ed;color:#c2410c}
+/* ---- 打开工具页后的操作引导 ---- */
+.ph-guide{margin:0 0 12px;border:1.5px solid #bfdbfe;background:linear-gradient(180deg,#f5f9ff,#fff);border-radius:16px;padding:14px;animation:phPop .22s ease-out}
+.ph-guide-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:#1e3a8a}
+.ph-guide-badge{font-size:11px;color:#15803d;background:#dcfce7;border-radius:999px;padding:5px 10px;font-weight:700;white-space:nowrap}
+.ph-guide-badge.bad{color:#b91c1c;background:#fee2e2}
+.ph-guide-steps{margin:10px 0 8px;padding-left:20px;font-size:12px;line-height:1.85;color:#334155}
+.ph-guide-steps li{margin:2px 0}
+.ph-guide-steps b{color:#1d4ed8}
+.ph-guide-why{font-size:11px;line-height:1.65;color:#7b8798;background:#f8fafc;border-radius:9px;padding:8px 10px;margin-bottom:10px}
+.ph-guide-acts{display:flex;gap:8px;flex-wrap:wrap}
+.ph-guide-acts .btn{font-size:12px;padding:9px 13px;border-radius:10px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
 .hidden{display:none!important}
 /* ---- 结果回收 ---- */
 .ph-catch{margin:14px 0 4px;border:1.5px dashed #c7d6f5;background:linear-gradient(180deg,#f8fbff,#fff);border-radius:16px;padding:14px}
@@ -478,6 +541,7 @@ const ParseHub = (() => {
       if (input) input.value = '';
       refresh(); clear();
       const m = $('ph-msg'); if (m) m.classList.add('hidden');
+      const g = $('ph-guide'); if (g) g.classList.add('hidden');
       armed = false; state('等待解析结果…');
     });
     const v = $('ph-vtool'); if (v) v.addEventListener('click', () => go('vtool'));
@@ -553,10 +617,24 @@ const ParseHub = (() => {
       if (!armed || caught.length || busy) return;
       autoTry++;
       [250, 1100, 2600].forEach(ms => setTimeout(() => autoCollect(true), ms));
+      /* 剪贴板还是原链接 = 结果还没复制 → 明确提示，别一直干等 */
+      setTimeout(async () => {
+        if (!armed || caught.length) return;
+        let t = ''; try { t = await navigator.clipboard.readText(); } catch (e) {}
+        if (t && currentLink && t.trim() === currentLink.trim()) {
+          state('还没收到结果：请在工具页点「复制图片链接」再切回来', 'wait');
+        }
+      }, 2800);
       if (autoTry > 8) armed = false;
     };
     window.addEventListener('focus', onReturn);
+    window.addEventListener('pageshow', onReturn);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) onReturn(); });
+    /* 部分手机 / PWA 切回标签页不发 focus、visibilitychange：
+     * 用户随手点一下或滑一下也静默试一次剪贴板（内部有去重，不会重复弹窗） */
+    const poke = () => { if (armed && !caught.length && !busy) autoCollect(true); };
+    ['pointerdown', 'touchstart', 'click'].forEach(ev =>
+      document.addEventListener(ev, poke, { passive: true }));
 
     refresh();
     render();

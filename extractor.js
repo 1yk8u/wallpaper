@@ -27,8 +27,13 @@ function parseCacheKey(u) {
   const raw = String(u || '').trim().toLowerCase();
   const ne = raw.match(/(?:music\.)?163\.com\/[^\s]*[?&]id=(\d{4,14})/);
   if (ne) return 'netease:' + ne[1];
-  const qs = raw.match(/qishui\.douyin\.com\/song\/(\d{6,20})/);
-  if (qs) return 'qishui:' + qs[1];
+  /* 汽水两种分享形态：track_id=（数字）与 /s/<短码>（键统一小写） */
+  if (/qishui|music\.douyin\.com/.test(raw)) {
+    const tr = raw.match(/track_id=(\d{10,20})/);
+    if (tr) return 'qishui:' + tr[1];
+    const qs = raw.match(/qishui\.douyin\.com\/(?:song|s)\/([a-z0-9]{6,20})/);
+    if (qs) return 'qishui:' + qs[1];
+  }
   return raw
     .replace(/^https?:\/\//, '')
     .replace(/^www\./, '')

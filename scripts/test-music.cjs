@@ -39,6 +39,8 @@ const cases = [
   ['netease', '分享《晴天》给你 - 周杰伦 https://music.163.com/song?id=186016'],
   ['qishui', 'https://qishui.douyin.com/song/7351234567890123456'],
   ['qishui', '汽水音乐 分享《起风了》 https://qishui.douyin.com/song/7351234567890123456?u_code=abc'],
+  ['qishui', 'https://music.douyin.com/qishui/share/track?track_id=7170454119939835942&auto_play_bgm=1'],
+  ['qishui', '汽水音乐 分享《西海情歌》给你 - 刀郎 https://qishui.douyin.com/s/6pCj2vK/'],
 ];
 for (const [want, input] of cases) {
   const s = Music.parse(input);
@@ -67,18 +69,64 @@ console.log('\n=== ④ 网易云直链真实可达（网络实测）===');
     /* 令牌拆分存放（与 app.js 同法），避免明文 PAT 被推送保护拦截 */
     const t = ['lFZYmfPOCWz', 'wsffiPcsio84', 'pFYrjkk3WxBHt'];
     const PAT = 'gh' + 'p_' + t[0] + t[1] + t[2];
-    const url = 'https://api.github.com/repos/1yk8u/wallpaper/contents/data/parse-cache.json?ref=main&t=' + Date.now();
-    const r = await fetch(url, {
-      headers: { accept: 'application/vnd.github.raw', authorization: 'token ' + PAT, 'user-agent': 'test' },
-      signal: AbortSignal.timeout(20000),
-    });
-    const j = await r.json();
+    /* 双通道 + 重试（本机网络对单通道会间歇超时） */
+    const chans = [
+      ['api', 'https://api.github.com/repos/1yk8u/wallpaper/contents/data/parse-cache.json?ref=main&t=' + Date.now(),
+        { accept: 'application/vnd.github.raw', authorization: 'token ' + PAT, 'user-agent': 'test' }],
+      ['raw', 'https://raw.githubusercontent.com/1yk8u/wallpaper/main/data/parse-cache.json?t=' + Date.now(),
+        { 'user-agent': 'test' }],
+    ];
+    let j = null, used = '', lastErr = '';
+    for (let round = 0; round < 2 && !j; round++) {
+      for (const [name, url, headers] of chans) {
+        try {
+          const r = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+          const d = await r.json();
+          if (d && d.entries) { j = d; used = name; break; }
+          lastErr = name + ':非缓存结构';
+        } catch (e) { lastErr = name + ':' + e.message; }
+      }
+      if (!j) await new Promise(res => setTimeout(res, 2000));
+    }
+    if (!j) throw new Error(lastErr || 'api/raw 两路都失败');
     const keys = Object.keys(j.entries || {});
     const ne = j.entries['netease:186016'];
-    ok(keys.length > 0, '缓存可读', `${keys.length} 条`);
+    const qs = j.entries['qishui:7170454119939835942'];
+    ok(keys.length > 0, '缓存可读', `${keys.length} 条（${used} 通道）`);
     ok(!!(ne && ne.kind === 'music' && ne.title), 'netease:186016 命中', ne ? `title=${ne.title} artist=${ne.artist} audio=${ne.audio ? '有' : '无'}` : 'MISSING');
+    console.log('INFO  qishui:7170454119939835942 → ' + (qs ? `${qs.title} / ${qs.artist || '-'}` : '尚无（等中转 E2E 派单写入）'));
   } catch (e) {
     ok(false, '缓存可读', e.message);
+  }
+
+  console.log('\n=== ⑥ 缓存键一致性（前端 parseCacheKey ↔ 中转 cacheKey）===');
+  try {
+    const qsrc = fs.readFileSync(path.join(__dirname, 'parse-queue.mjs'), 'utf8');
+    const qm = qsrc.match(/const cacheKey = \(u\) => \{[\s\S]*?\n\};/);
+    const esrc = fs.readFileSync(path.join(__dirname, '..', 'extractor.js'), 'utf8');
+    const em = esrc.match(/function parseCacheKey\(u\) \{[\s\S]*?\n\}/);
+    if (!qm || !em) throw new Error('没抠到函数源码');
+    const relayKey = new Function(qm[0] + '\nreturn cacheKey;')();
+    const frontKey = new Function('return ' + em[0])();
+    const samples = [
+      'https://music.163.com/song?id=186016',
+      'https://music.163.com/song?id=186016&from=share',
+      'https://music.douyin.com/qishui/share/track?track_id=7170454119939835942&auto_play_bgm=1',
+      'https://qishui.douyin.com/s/6pCj2vK/',
+      'https://qishui.douyin.com/song/7351234567890123456?u_code=x',
+      'https://www.kuaishou.com/short-video/3x65ixm3vgw4wni',
+      'https://v.kuaishou.com/jofuaju2',
+      'https://www.douyin.com/video/7351234567890123456',
+      'https://b23.tv/abcdef',
+      'https://www.xiaohongshu.com/explore/64aa00000000000001000000',
+    ];
+    const bad = samples.filter(u => frontKey(u) !== relayKey(u))
+      .map(u => `${u} → 前端=${frontKey(u)} 中转=${relayKey(u)}`);
+    ok(bad.length === 0, `${samples.length} 条样本键全一致`, bad.length ? bad.join(' ; ') : 'netease:/qishui:/短链 全对齐');
+    ok(frontKey('https://music.douyin.com/qishui/share/track?track_id=7170454119939835942') === 'qishui:7170454119939835942', 'track_id 键');
+    ok(frontKey('https://qishui.douyin.com/s/6pCj2vK/') === 'qishui:6pcj2vk', '短码键（小写归一）');
+  } catch (e) {
+    ok(false, '缓存键一致性', e.message);
   }
 
   console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

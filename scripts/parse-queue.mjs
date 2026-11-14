@@ -12,11 +12,17 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 /* ---------- 小工具 ---------- */
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function fetchT(url, opt = {}, ms = 30000) {
-  return fetch(url, {
-    ...opt,
-    headers: { 'user-agent': UA, ...(opt.headers || {}) },
-    signal: AbortSignal.timeout(ms),
-  });
+  try {
+    return await fetch(url, {
+      ...opt,
+      headers: { 'user-agent': UA, ...(opt.headers || {}) },
+      signal: AbortSignal.timeout(ms),
+    });
+  } catch (e) {
+    /* 留痕：把 undici 的底层原因（DNS/TLS/RST/超时）带进错误信息 */
+    const c = (e && e.cause) || {};
+    throw new Error('网络失败[' + (c.code || c.name || 'unknown') + '] ' + (c.message || e.message) + ' ← ' + url);
+  }
 }
 /* \u002F → / ，\uXXXX → 字符（与前端 unescapeJsonish 等价） */
 const unesc = (s) => String(s || '')
@@ -52,13 +58,18 @@ const findNode = (node, pred, depth = 0) => {
   return null;
 };
 /* 缓存键：必须与前端 extractor.js/music.js 的 cacheKey 逐字节一致。
- * 音乐用「平台:ID」做键——音乐链接的 query（id=）绝不能被剥掉，否则所有歌撞一个键。 */
+ * 音乐用「平台:ID」做键——音乐链接的 query（id=/track_id=）绝不能被剥掉，否则所有歌撞一个键。
+ * 汽水两种分享形态：/s/<短码>（大小写敏感但键统一小写）与 track_id=（数字）。 */
 const cacheKey = (u) => {
   const raw = String(u || '').trim().toLowerCase();
   const ne = raw.match(/(?:music\.)?163\.com\/[^\s]*[?&]id=(\d{4,14})/);
   if (ne) return 'netease:' + ne[1];
-  const qs = raw.match(/qishui\.douyin\.com\/song\/(\d{6,20})/);
-  if (qs) return 'qishui:' + qs[1];
+  if (/qishui|music\.douyin\.com/.test(raw)) {
+    const tr = raw.match(/track_id=(\d{10,20})/);
+    if (tr) return 'qishui:' + tr[1];
+    const qs = raw.match(/qishui\.douyin\.com\/(?:song|s)\/([a-z0-9]{6,20})/);
+    if (qs) return 'qishui:' + qs[1];
+  }
   return raw
     .replace(/^https?:\/\//, '')
     .replace(/^www\./, '')
@@ -75,35 +86,47 @@ async function resolveShort(url) {
 }
 
 async function parseKuaishou(finalURL) {
-  /* SSR APOLLO_STATE（与前端 ksProfileSSR 同构） */
-  const html = await (await fetchT(finalURL, { headers: { accept: 'text/html,application/xhtml+xml' } }, 30000)).text();
-  if (/请输入验证码|securityCheck|verify/i.test(html.slice(0, 3000))) throw new Error('快手风控页(需验证)');
-  const m = html.match(/window\.__APOLLO_STATE__\s*=\s*(\{[\s\S]*?\})<\/script>/);
-  if (!m) throw new Error('页面无 APOLLO_STATE(html长度' + html.length + ')');
-  const st = JSON.parse(String(m[1]).replace(/undefined/g, 'null'));
-  const items = [];
-  for (const key in st) {
-    let v = st[key];
-    if (v && v.$ref) v = st[v.$ref] || null;
-    if (!v || typeof v !== 'object') continue;
-    if (!(v.photoId || v.id)) continue;
-    const playMv = Array.isArray(v.mainMvUrls) && v.mainMvUrls[0]
-      ? unesc(typeof v.mainMvUrls[0] === 'string' ? v.mainMvUrls[0] : (v.mainMvUrls[0].url || '')) : '';
-    const cover = Array.isArray(v.coverUrls) && v.coverUrls[0]
-      ? unesc(typeof v.coverUrls[0] === 'string' ? v.coverUrls[0] : (v.coverUrls[0].url || '')) : '';
-    const caption = String(v.caption || '').slice(0, 80) || '快手作品';
-    let imgs = imgCands(v);
-    let kind, images = [], play = '', coverUse = cover;
-    if (playMv && /\.(mp4|m3u8)/i.test(playMv)) { kind = 'video'; play = playMv; images = []; coverUse = cover || imgs[0] || ''; }
-    else {
-      images = [...new Set(imgs)].slice(0, 30);
-      if (!images.length) continue;
-      kind = 'images'; coverUse = cover || images[0];
-    }
-    items.push({ kind, images, play, title: caption, cover: coverUse });
+  /* 自家接口：快手 h5 分享页自己的数据 API（零第三方，POST JSON）
+   * 旧的 SSR __APOLLO_STATE__ 方案已失效（页面改为纯客户端渲染），改走这个。 */
+  const code = (finalURL.match(/(?:short-video|fw\/photo|\/photo)\/([a-z0-9]{6,20})/i) || [])[1];
+  if (!code) throw new Error('无法从链接提取快手作品号 ← ' + finalURL);
+  const r = await fetchT('https://m.gifshow.com/rest/wd/ugH5App/photo/simple/info', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json, text/plain, */*',
+      'content-type': 'application/json',
+      referer: 'https://m.gifshow.com/fw/photo/' + code,
+      origin: 'https://m.gifshow.com',
+    },
+    body: JSON.stringify({ photoId: code }),
+  }, 30000);
+  const j = await r.json();
+  if (!j || j.result !== 1 || !j.photo) {
+    const msg = j && (j.error_msg || ('result=' + j.result));
+    if (j && (j.result === 11 || j.result === 223)) throw new Error('作品已删除/不存在');
+    throw new Error('快手接口: ' + (msg || '无数据'));
   }
-  if (!items.length) throw new Error('APOLLO_STATE 解析到 0 个作品');
-  return items[0];
+  const p = j.photo;
+  const title = String(p.caption || '').replace(/\s+/g, ' ').slice(0, 80) || '快手作品';
+  const cover0 = (Array.isArray(p.coverUrls) && p.coverUrls[0]) || '';
+  /* 视频优先 */
+  const mvUrl = Array.isArray(p.mainMvUrls) && p.mainMvUrls[0]
+    ? (typeof p.mainMvUrls[0] === 'string' ? p.mainMvUrls[0] : (p.mainMvUrls[0].url || '')) : '';
+  if (mvUrl && /\.(mp4|m3u8)/i.test(mvUrl)) return { kind: 'video', play: unesc(mvUrl), title, cover: cover0 };
+  /* 图集：atlas.list（相对路径）× atlas.cdn（CDN 域名） */
+  const atlas = (j.atlas && Array.isArray(j.atlas.list) && j.atlas.list.length) ? j.atlas
+    : (p.ext_params && p.ext_params.atlas) || null;
+  if (atlas && Array.isArray(atlas.list) && atlas.list.length) {
+    const cdnHost = (Array.isArray(atlas.cdn) && atlas.cdn[0]) ||
+      (Array.isArray(atlas.cdnList) && atlas.cdnList[0] && atlas.cdnList[0].cdn) || 'p2.a.yximgs.com';
+    const imgs = [...new Set(atlas.list.map(x => 'https://' + cdnHost + x))].slice(0, 30);
+    if (imgs.length) return { kind: 'images', images: imgs, title, cover: cover0 || imgs[0] };
+  }
+  /* 单图兜底 */
+  if (p.singlePicture && /^https?:\/\//.test(String(p.singlePicture))) {
+    return { kind: 'images', images: [String(p.singlePicture)], title, cover: cover0 || String(p.singlePicture) };
+  }
+  throw new Error('快手接口没有可取的媒体');
 }
 
 async function parseDouyin(finalURL) {
@@ -175,54 +198,76 @@ async function parseNeteaseMusic(id) {
     matched: false,
   };
 }
-async function parseQishuiMusic(id) {
-  const page = 'https://qishui.douyin.com/song/' + id;
-  let title = '', artist = '', cover = '', audio = '', matched = false, matchedId = '';
-  try {
-    const html = await (await fetchT(page, { headers: { accept: 'text/html,application/xhtml+xml' } }, 30000)).text();
-    const pick = (prop) => {
-      const m = html.match(new RegExp('<meta[^>]+(?:property|name)="' + prop + '"[^>]+content="([^"]+)"', 'i')) ||
-                html.match(new RegExp('<meta[^>]+content="([^"]+)"[^>]+(?:property|name)="' + prop + '"', 'i'));
-      return m ? m[1].replace(/&amp;/g, '&').trim() : '';
-    };
-    title = (pick('og:title') || '').split(/[-|—·]/)[0].trim();
-    cover = pick('og:image');
-    const am = html.match(/https?:\\?\/\\?\/[^"'\s\\]+?\.(?:mp3|m4a)[^"'\s\\]*/i);
-    if (am) audio = am[0].replace(/\\\//g, '/');
-    /* SSR 数据里补歌名/歌手 */
-    try {
-      const sm = html.match(/window\.(?:_ROUTER_DATA|__INITIAL_STATE__)\s*=\s*(\{[\s\S]*?\})\s*<\/script>/);
-      if (sm) {
-        const st = JSON.parse(String(sm[1]).replace(/undefined/g, 'null').replace(/\bNaN\b/g, 'null'));
-        const node = findNode(st, o => !!(o && (o.title || o.name) && (o.artist || o.author || o.singer || o.audio)));
-        if (node) {
-          title = title || node.title || node.name || '';
-          artist = artist || node.artist || node.author || node.singer || '';
-          cover = cover || node.cover || node.avatar || '';
-          if (!audio && node.audio && /^https?:\/\//.test(String(node.audio))) audio = String(node.audio);
+async function parseQishuiMusic(trackId, pageUrl) {
+  /* 汽水歌曲分享页（music.douyin.com/qishui/share/track）自带 SSR 的 _ROUTER_DATA：
+   * 歌名/歌手/专辑/封面/vid 全在里面——汽水自家页面，零第三方。
+   * 汽水未开放网页直链 → 拿真实歌名+歌手去网易云公开搜索匹配同名版本（matched=true，前端标注）。 */
+  const target = trackId
+    ? 'https://music.douyin.com/qishui/share/track?track_id=' + trackId
+    : '';
+  if (!target) throw new Error('汽水：该分享不是单曲链接（歌单/视频暂不支持），且链接里没有 track_id');
+  const html = await (await fetchT(target, { headers: { accept: 'text/html,application/xhtml+xml' } }, 30000)).text();
+  /* 平衡括号截取 _ROUTER_DATA（对象里可能嵌着 </script> 字样以外的干扰） */
+  let node = null, ogCover = '';
+  const om = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i);
+  if (om && !/favicon|logo/i.test(om[1])) ogCover = om[1];
+  const rm = html.match(/_ROUTER_DATA\s*=\s*/);
+  if (rm) {
+    const start = html.indexOf('{', rm.index + rm[0].length);
+    if (start >= 0) {
+      let depth = 0, inStr = false, esc2 = false, end = -1;
+      for (let i = start; i < html.length; i++) {
+        const c = html[i];
+        if (inStr) {
+          if (esc2) esc2 = false;
+          else if (c === '\\') esc2 = true;
+          else if (c === '"') inStr = false;
+          continue;
         }
+        if (c === '"') inStr = true;
+        else if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
       }
-    } catch (e) { /* SSR 结构变了也不致命 */ }
-  } catch (e) { /* 页面抓不到 → 仍尝试同名匹配 */ }
-  title = title || '汽水音乐 · ' + id;
-  /* 汽水未开放直链时：用歌名在网易云找同名版本（结果里 matched=true，前端明确标注） */
-  if (!audio) {
-    try {
-      const d = await (await fetchT('https://music.163.com/api/search/get?s=' + encodeURIComponent(title) + '&type=1&limit=5', NE_API_H, 30000)).json();
-      const list = (d && d.result && d.result.songs) || [];
-      const hit = list[0];
-      if (hit) {
-        matched = true; matchedId = String(hit.id);
-        audio = 'https://music.163.com/song/media/outer/url?id=' + matchedId + '.mp3';
-        artist = artist || ((hit.artists || []).map(a => a.name)).filter(Boolean).join(' / ');
-        cover = cover || ((hit.album || {}).picUrl) || '';
+      if (end > start) {
+        try {
+          const j = JSON.parse(cleanJsonish(html.slice(start, end)));
+          if (trackId) {
+            node = findNode(j, o => o && String(o.id) === String(trackId) && !!o.name && (o.artists || o.media_type === 'track'));
+          }
+        } catch (e) { /* JSON 挂了就走兜底 */ }
       }
-    } catch (e) { /* 匹配失败就只给打开原曲 */ }
+    }
   }
-  const out = { kind: 'music', platform: 'qishui', id: String(id), title, artist, album: '', cover, audio, matched };
+  if (!node) throw new Error(trackId ? '汽水页面没有歌曲数据(该曲可能不支持网页播放)' : '汽水页面无法解析');
+  const title = String(node.name || '').trim();
+  const artist = (Array.isArray(node.artists) ? node.artists : [])
+    .map(a => a.simple_display_name || a.name || '').filter(Boolean).join(' / ');
+  const album = ((node.album || {}).name) || '';
+  let cover = ogCover;
+  if (!cover) {
+    const uc = (node.album || {}).url_cover || node.url_cover;
+    if (uc && uc.uri && Array.isArray(uc.urls) && uc.urls.length) {
+      cover = String(uc.urls[0]).replace(/\/+$/, '') + '/' + String(uc.uri).replace(/\\u002F/g, '/');
+    }
+  }
+  /* 网易云同名匹配（拿真实歌名+歌手搜，命中率高；结果 matched=true 明确标注） */
+  let audio = '', matched = false, matchedId = '';
+  try {
+    const q = (title + ' ' + artist).trim();
+    const d = await (await fetchT('https://music.163.com/api/search/get?s=' + encodeURIComponent(q) + '&type=1&limit=5', NE_API_H, 30000)).json();
+    const list = (d && d.result && d.result.songs) || [];
+    const hit = list[0];
+    if (hit) {
+      matched = true; matchedId = String(hit.id);
+      audio = 'https://music.163.com/song/media/outer/url?id=' + matchedId + '.mp3';
+    }
+  } catch (e) { /* 匹配失败就只给打开原曲 */ }
+  const out = { kind: 'music', platform: 'qishui', id: String(trackId || ''), title, artist, album, cover, audio, matched };
   if (matchedId) out.matchedId = matchedId;
   return out;
 }
+/* JSON 里的裸 undefined/NaN 修掉（与前端 cleanJson 同构） */
+const cleanJsonish = (s) => String(s).replace(/\bundefined\b/g, 'null').replace(/\bNaN\b/g, 'null');
 
 /* ---------- 主流程 ---------- */
 const urls = String(process.env.PARSE_URLS || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
@@ -246,7 +291,11 @@ for (const raw of urls) {
     if (key.startsWith('netease:')) {
       result = await parseNeteaseMusic(key.slice(8));
     } else if (key.startsWith('qishui:')) {
-      result = await parseQishuiMusic(key.slice(7));
+      /* 键后缀可能是数字 track_id，也可能是 /s/<短码>——短码靠重定向后的 finalURL 提取真 track_id */
+      const suffix = key.slice(7);
+      const trFromUrl = (String(finalURL).match(/track_id=(\d{10,20})/) || [])[1] || '';
+      const tr = /^\d{10,20}$/.test(suffix) ? suffix : trFromUrl;
+      result = await parseQishuiMusic(tr, finalURL);
     } else {
       const isKs = /kuaishou\.com|chenzhongtech/i.test(finalURL) || /kuaishou\.com|chenzhongtech/i.test(url);
       const isDouyin = /douyin\.com|iesdouyin\.com/i.test(finalURL) || /douyin\.com|iesdouyin\.com/i.test(url);

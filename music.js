@@ -23,12 +23,13 @@ const Music = (() => {
     { key: 'qishui', name: '汽水音乐', short: '汽水', color: '#00b8bf',
       test: /qishui\.douyin\.com|music\.douyin\.com/i,
       glyph: '<path d="M4 15c2-3 4-3 6 0s4 3 6 0 3-2 4-1" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/>',
-      idRe: /(?:song\/|music_id=|\bid=)(\d{6,20})/i },
+      /* 三种真实形态：track_id=（music.douyin.com 分享页）/ song/<数字> / qishui.douyin.com/s/<短码> */
+      idRe: /(?:track_id=|song\/|music_id=|\bid=)(\d{6,20})|qishui\.douyin\.com\/s\/([a-z0-9]{6,12})(?:[/?#\s]|$)/i },
   ];
 
   const DEMOS = [
     { key: 'netease', url: 'https://music.163.com/song?id=186016', text: '分享《晴天》给你 - 周杰伦' },
-    { key: 'qishui', url: 'https://qishui.douyin.com/song/7351234567890123456', text: '汽水音乐 分享《起风了》给你' },
+    { key: 'qishui', url: 'https://music.douyin.com/qishui/share/track?track_id=7170454119939835942', text: '汽水音乐 分享《西海情歌》给你 - 刀郎' },
   ];
 
   const $ = id => document.getElementById(id);
@@ -60,7 +61,8 @@ const Music = (() => {
   function parse(raw) {
     const p = detect(raw) || PLATS[0];
     const m = String(raw || '').match(p.idRe);
-    const id = m ? m[1] : '';
+    let id = m ? (m[1] || m[2] || '') : '';
+    if (p.key === 'qishui' && id) id = id.toLowerCase();   /* 短码键统一小写（与中转一致） */
     const g = guessText(raw);
     const s = {
       platform: p.key, platformName: p.name, color: p.color, id,
@@ -77,9 +79,15 @@ const Music = (() => {
 
   /* ===== 与自家仓库对账：缓存有就补全，没有就寄单代抓 ===== */
   async function enrich(s, row, noteEl) {
-    const key = (s.platform === 'netease' && s.id) ? 'netease:' + s.id
-      : (s.platform === 'qishui' && s.id) ? 'qishui:' + s.id
-      : (typeof parseCacheKey === 'function' ? parseCacheKey(s.url) : '');
+    /* 键优先走 parseCacheKey（与 extractor/中转逐字节一致），兜底用平台:ID */
+    let key = '';
+    try {
+      if (typeof parseCacheKey === 'function') key = parseCacheKey(s.page || s.url) || '';
+    } catch (e) {}
+    if (!key) {
+      key = (s.platform === 'netease' && /^\d{4,14}$/.test(s.id)) ? 'netease:' + s.id
+        : (s.platform === 'qishui' && s.id) ? 'qishui:' + s.id : '';
+    }
     if (!key || typeof serverCacheGet !== 'function') return;
     try {
       let e = await serverCacheGet(key);
@@ -241,8 +249,8 @@ const Music = (() => {
     if (a) a.addEventListener('error', () => {
       if (a.dataset.tried) return;
       a.dataset.tried = '1';
-      a.src = outerURL(s.id || '') || s.audio;
-      a.load();
+      /* 只有网易云才可能用 outer 端点兜底；汽水匹配来的音频失败就不再折腾 */
+      if (s.platform === 'netease' && s.id) { a.src = outerURL(s.id); a.load(); }
     });
   }
 
@@ -313,7 +321,9 @@ const Music = (() => {
     try {
       const hits = [];
       for (const sc of songs) {
-        const key = (sc.platform === 'netease' ? 'netease:' : 'qishui:') + sc.id;
+        let key = '';
+        try { if (typeof parseCacheKey === 'function') key = parseCacheKey(sc.page || sc.url) || ''; } catch (e) {}
+        if (!key) key = (sc.platform === 'netease' ? 'netease:' : 'qishui:') + sc.id;
         const e = (typeof serverCacheGet === 'function') ? await serverCacheGet(key, { ms: 6000 }) : null;
         hits.push(!!(e && e.kind === 'music' && !e.err));
       }

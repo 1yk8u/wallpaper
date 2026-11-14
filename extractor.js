@@ -158,29 +158,36 @@ async function parsedPath(key) {
   const h = await sha256Hex(key);
   return 'data/parsed/' + h.slice(0, 16) + '.json';
 }
-async function raceJSON(chans) {
-  return new Promise(resolve => {
-    let left = chans.length, done = false;
-    chans.forEach(run => run().then(j => {
-      if (done || !j) return;
-      done = true; resolve(j);
-    }).catch(() => {}).finally(() => { if (--left === 0 && !done) resolve(null); }));
-  });
-}
-async function lightResultGet(key, ms) {
+const tsOf = (j) => Date.parse((j && j.ts) || '') || 0;
+async function lightResultGet(key, ms, since) {
   const cfg = ghCfg();
   const p = await parsedPath(key), bust = Date.now();
   ms = ms || 12000;
   const chans = [];
-  if (cfg && cfg.pat) chans.push(() => fetchCacheJSON(
+  /* api.github.com 是唯一实时的通道（~1s）；raw CDN 有几分钟旧缓存，
+   * 同源 Pages 更慢更滞后 —— 不能「谁先返回用谁」，否则旧结果会盖掉新的。 */
+  if (cfg && cfg.pat) chans.push({ rt: true, run: () => fetchCacheJSON(
     'https://api.github.com/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
     '/contents/' + p + '?ref=' + encodeURIComponent(cfg.branch) + '&t=' + bust,
-    { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.raw', 'Authorization': 'Bearer ' + cfg.pat } }, ms));
-  if (cfg) chans.push(() => fetchCacheJSON(
+    { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.raw', 'Authorization': 'Bearer ' + cfg.pat } }, ms) });
+  if (cfg) chans.push({ rt: false, run: () => fetchCacheJSON(
     'https://raw.githubusercontent.com/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo) +
-    '/' + encodeURIComponent(cfg.branch) + '/' + p + '?t=' + bust, { cache: 'no-store' }, ms));
-  chans.push(() => fetchCacheJSON(p + '?t=' + bust, { cache: 'no-store' }, ms));
-  return await raceJSON(chans);
+    '/' + encodeURIComponent(cfg.branch) + '/' + p + '?t=' + bust, { cache: 'no-store' }, ms) });
+  chans.push({ rt: false, run: () => fetchCacheJSON(p + '?t=' + bust, { cache: 'no-store' }, ms) });
+
+  return new Promise(resolve => {
+    let done = false, best = null, settled = 0;
+    const finish = () => { if (!done) { done = true; resolve(best); } };
+    chans.forEach(c => c.run().then(j => {
+      if (j && typeof j === 'object' && (!best || tsOf(j) > tsOf(best))) best = j;
+      /* 拿到本次写入的结果就立刻交卷 */
+      if (!done && since && j && tsOf(j) >= since - 15000) { done = true; resolve(j); return; }
+      /* 实时通道回话后只再等 1 秒给快的备胎，绝不陪 Pages 耗 */
+      if (c.rt) setTimeout(finish, 1000);
+    }).catch(() => { if (c.rt) setTimeout(finish, 1000); })
+      .finally(() => { if (++settled === chans.length) finish(); }));
+    setTimeout(finish, 8000);   /* 绝对兜底，保证每轮不会挂死 */
+  });
 }
 
 /* ---------- L3 自家中转：寄单 + 轮询 ---------- */
@@ -205,10 +212,10 @@ async function relayDispatch(url, key) {
 }
 async function relayPoll(key, since, onTick) {
   const t0 = Date.now();
-  for (let i = 0; i < 30; i++) {           /* 3s × 30 ≈ 90 秒 */
+  for (let i = 0; i < 30; i++) {           /* 每轮约 5 秒，上限约 2 分钟 */
     await sleep(3000);
-    let e = await lightResultGet(key);    /* 优先：只读单条小文件 */
-    if (!e && i % 3 === 2) {              /* 老仓库没有小文件时，偶尔刷一次总缓存兜底 */
+    let e = await lightResultGet(key, 12000, since);  /* 只读单条小文件，按 ts 取最新 */
+    if (!e && i % 5 === 4) {              /* 三通道全不通时，偶尔刷一次总缓存兜底 */
       const entries = await loadCache(true, 15000);
       e = (entries && entries[key]) || null;
     }
@@ -427,7 +434,7 @@ async function startExtract() {
       exStatus('📮 派单响应慢，仓库可能已在抓，继续等结果…', '');
     }
     const got = await relayPoll(key, since, (i, sec) => exStatus('📮 仓库抓取中… ' + i + ' 轮（' + sec + 's），页面别关', ''));
-    if (!got) throw new Error('代抓约 90 秒还没出结果（平台可能风控）。链接已入队，稍后再点一次「开始解析」通常就命中缓存');
+    if (!got) throw new Error('代抓约 2 分钟还没出结果（平台可能风控或仓库排队）。链接已入队，稍后再点一次「开始解析」通常就命中缓存');
     if (got.err) throw new Error('自家中转：' + got.err);
     memoPut(url, got);
     exStatus('✅ 自家仓库代抓完成', 'ok');

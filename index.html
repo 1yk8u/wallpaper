@@ -98,7 +98,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg>
         解析工具
       </h2>
-      <p class="ex-hint">粘贴分享链接 → 选一个工具，秒开解析（本站不再跑云端引擎，不用等）</p>
+      <p class="ex-hint">粘贴分享链接 → 选工具（链接自动复制）→ 在工具页点「粘贴」+「解析」→ 切回本页自动弹「是否保存在壁纸库」</p>
 
       <div class="row paste-row">
         <input id="ph-link" type="text" placeholder="把抖音 / 快手 / B站 / 小红书 / TikTok / YouTube 链接粘到这里…" enterkeyhint="go" autocomplete="off" spellcheck="false">
@@ -114,16 +114,17 @@
         <button class="ph-tool ph-vtool" id="ph-vtool" type="button">
           <span class="ph-logo">V</span>
           <span class="ph-txt"><b>vtool.tv</b><small>21 个平台 · 视频 / 图集 / 批量</small></span>
-          <span class="ph-go">去解析 ↗</span>
+          <span class="ph-go">打开工具 ↗</span>
         </button>
         <button class="ph-tool ph-hello" id="ph-hello" type="button">
           <span class="ph-logo">H</span>
           <span class="ph-txt"><b>HelloTik</b><small>免费不限次 · 免登录 · 极速</small></span>
-          <span class="ph-go">去解析 ↗</span>
+          <span class="ph-go">打开工具 ↗</span>
         </button>
       </div>
 
       <div id="ph-msg" class="ph-msg hidden"></div>
+      <div id="ph-guide" class="ph-guide hidden"></div>
 
       <!-- ===== 解析结果回收：图片回到本站，弹窗询问是否入库 ===== -->
       <div id="ph-catch" class="ph-catch">
@@ -162,11 +163,12 @@
         <ol>
           <li>在 App / 网页里点 <b>分享 → 复制链接</b>；</li>
           <li>回到本页点 <b>快捷粘贴</b>，或手动粘进输入框；</li>
-          <li>点 <b>vtool.tv</b> 或 <b>HelloTik</b>：工具在新窗口打开，链接已自动复制，粘贴即可解析；</li>
+          <li>点 <b>vtool.tv</b> 或 <b>HelloTik</b>：工具页在新窗口打开，<b>原链接已自动复制</b>；</li>
+          <li>在工具页点 <b>「粘贴 / 一键粘贴」</b> 把链接填进去，再点 <b>「解析」</b>（这两个网站不接收网址参数，所以打开时输入框是空的，不是没打开成功）；</li>
           <li>在工具页点 <b>复制图片链接</b> / <b>复制全部图片</b>（或把图片存到手机、直接复制图片本身）；</li>
           <li>切回本页，下方「解析结果回收」会自动弹出图片，点 <b>保存到壁纸库</b> 即可永久入库。</li>
         </ol>
-        <p class="hint">浏览器不允许网页读取另一个标签页的内容，所以结果需要「复制一下再切回来」；本页会自动读剪贴板，多数情况下切回来就直接弹窗，没弹出就点一下「一键取回结果」或把图片选进来。</p>
+        <p class="hint">这两个网站都不支持「链接放在网址里自动解析」，浏览器也禁止本站读取 / 填写另一个标签页的内容，所以中间需要在工具页点一下「粘贴」、解析完「复制一下」结果；本页会自动复制原链接、自动读剪贴板接回图片，多数情况下切回来就直接弹窗，没弹出就点「一键取回结果」或把图片选进来。</p>
       </details>
 
       <p class="fine">视频 / 图片解析由上述第三方站点完成；本站负责「结果回收 → 询问是否保存到壁纸库」这一步，入库走仓库直连、永久保存。音乐解析为本页自研。下载与版权请遵守对应平台规则，作品版权归原作者所有。</p>
@@ -226,7 +228,7 @@
 
 <script src="core.js?v=20261107H"></script>
 <script src="app.js?v=20261101A"></script>
-<script src="parsehub.js?v=20261114B"></script>
+<script src="parsehub.js?v=20261114C"></script>
 <script src="music.js?v=20261114A"></script>
 <script src="payment.js?v=20261114A"></script>
 </body>

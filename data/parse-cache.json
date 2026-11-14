@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-14T08:01:08.686Z",
+  "updated": "2026-11-14T09:03:13.013Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7095,6 +7095,47 @@
     "v.kuaishou.com/nnmnwvlf%20%e7%bb%99%e6%88%91%e7%94%bb%e9%a5%bc%e7%9a%84%e6%97%b6%e5%80%99%e8%ae%b0%e5%be%97%e6%92%92%e7%82%b9%e8%91%b1%e8%8a%b1%20%e6%88%91%e5%98%b4%e5%8f%bc%20%22%e5%8a%a8%e6%bc%ab%e5%a3%81%e7%ba%b8%20%22%e5%8a%a8%e6%bc%ab%e5%a5%b3%e7%a5%9e%20%22%e4%ba%8c%e6%ac%a1%e5%85%83%e5%8a%a8%e6%bc%ab%20%22%e7%be%8e%e7%a5%9e%e9%99%8d%e4%b8%b4%20%e8%af%a5%e4%bd%9c%e5%93%81%e5%9c%a8%e5%bf%ab%e6%89%8b%e8%a2%ab%e6%92%ad%e6%94%be%e8%bf%8727.9%e4%b8%87%e6%ac%a1%ef%bc%8c%e7%82%b9%e5%87%bb%e9%93%be%e6%8e%a5%ef%bc%8c%e6%89%93%e5%bc%80%e3%80%90%e5%bf%ab%e6%89%8b%e6%9e%81%e9%80%9f%e7%89%88%e3%80%91%e7%9b%b4%e6%8e%a5%e8%a7%82%e7%9c%8b%ef%bc%81": {
       "err": "快手 SSR：无法从链接提取快手作品号 ← https://v.kuaishou.com/nnMnwVLF%20%E7%BB%99%E6%88%91%E7%94%BB%E9%A5%BC%E7%9A%84%E6%97%B6%E5%80%99%",
       "ts": "2026-11-14T08:01:07.885Z"
+    },
+    "v.kuaishou.com/ki211yiw": {
+      "kind": "images",
+      "images": [
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_0.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_1.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_2.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_3.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_4.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_5.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_6.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_7.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_8.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_9.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_10.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_11.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_12.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_13.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_14.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_15.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_16.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_17.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_18.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_19.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_20.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_21.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_22.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_23.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_24.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_25.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_26.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_27.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_28.jpg",
+        "https://p23.a.yximgs.com/ufile/atlas/NTIzMzQ2NDQ1MjQ4OTcyODcyOF8xNzkxMjUxNjI1MDM1_29.jpg"
+      ],
+      "title": "我不约你了 我在纽约#纽约 #旅行 ￼#喜爱度激励计划 #治愈系风景",
+      "cover": {
+        "cdn": "p2.a.yximgs.com",
+        "url": "https://p2.a.yximgs.com/upic/2026/10/06/09/BMjAyNjEwMDYwOTUzNDVfMjA3Mjg0NTYxNl8yMTEyOTI1MjM5NzFfMV82_Be86461cde24e8a0663921cfbfab0bdbb.jpg?clientCacheKey=3x2kxb4cjtaxkb6.jpg&di=146d56e1&bp=10000"
+      },
+      "ts": "2026-11-14T09:03:12.213Z"
     }
   },
   "engine": "1.0.0"

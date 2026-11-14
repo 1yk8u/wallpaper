@@ -74,11 +74,43 @@ const findNode = (node, pred, depth = 0) => {
   }
   return null;
 };
+/* 链接净化：与前端 core.js 的 safePctDecode / extractURL 逐字节同构。
+ * 快手等 App 的分享口令常把链接整段 URL 编码后拼上标题
+ * （"https://v.kuaishou.com/JVPUEMk2%20%22%E9%A3%8E…"），
+ * 直接拿去请求会 404 → 「无法从链接提取快手作品号」。 */
+function safePctDecode(s) {
+  let t = String(s || '');
+  for (let i = 0; i < 6; i++) {
+    try { return decodeURIComponent(t); } catch (e) {
+      const cut = t.replace(/%[0-9a-fA-F]{0,1}$/, '').replace(/%[0-9a-fA-F]{2}$/, '');
+      if (cut === t) break;
+      t = cut;
+    }
+  }
+  return t;
+}
+function sanitizeUrl(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  let src = raw;
+  if (/%[0-9a-fA-F]{2}/i.test(raw)) {
+    const dec = safePctDecode(raw);
+    if (/https?:\/\//i.test(dec)) src = dec;
+  }
+  const m = src.match(/https?:\/\/[^\s"'<>（）()【】，。]+/);
+  if (m) src = m[0];              /* 非 URL（如 netease:123）原样保留 */
+  let u = src.split(/%(?:20|22|09|0a|0d|23|3f|26|3c|3e|27|28|29|2c|2e|3b|21)/i)[0];
+  u = u.replace(/%[0-9a-fA-F]{0,1}$/i, '');
+  u = u.replace(/[），。、！？！?…．»,]+$/g, '');
+  u = u.replace(/[),.;!?]+$/g, '');
+  return u;
+}
+
 /* 缓存键：必须与前端 extractor.js/music.js 的 cacheKey 逐字节一致。
  * 音乐用「平台:ID」做键——音乐链接的 query（id=/track_id=）绝不能被剥掉，否则所有歌撞一个键。
  * 汽水两种分享形态：/s/<短码>（大小写敏感但键统一小写）与 track_id=（数字）。 */
 const cacheKey = (u) => {
-  const raw = String(u || '').trim().toLowerCase();
+  const raw = String(sanitizeUrl(u) || u || '').trim().toLowerCase();
   const ne = raw.match(/(?:music\.)?163\.com\/[^\s]*[?&]id=(\d{4,14})/);
   if (ne) return 'netease:' + ne[1];
   if (/qishui|music\.douyin\.com/.test(raw)) {
@@ -105,7 +137,8 @@ async function resolveShort(url) {
 async function parseKuaishou(finalURL) {
   /* 自家接口：快手 h5 分享页自己的数据 API（零第三方，POST JSON）
    * 旧的 SSR __APOLLO_STATE__ 方案已失效（页面改为纯客户端渲染），改走这个。 */
-  const code = (finalURL.match(/(?:short-video|fw\/photo|\/photo)\/([a-z0-9]{6,20})/i) || [])[1];
+  const code = (finalURL.match(/(?:short-video|fw\/photo|\/photo)\/([a-z0-9]{6,20})/i)
+    || finalURL.match(/[?&]photoId=([a-z0-9]{6,20})/i) || [])[1];
   if (!code) throw new Error('无法从链接提取快手作品号 ← ' + finalURL);
   const r = await fetchT('https://m.gifshow.com/rest/wd/ugH5App/photo/simple/info', {
     method: 'POST',
@@ -296,7 +329,7 @@ cache.entries = cache.entries || {};
 
 let changed = 0;
 for (const raw of urls) {
-  const url = raw;
+  const url = sanitizeUrl(raw);   /* 口令里的编码标题必须在请求前剥掉 */
   const key = cacheKey(url);
   if (!key) continue;
   const prior = cache.entries[key];

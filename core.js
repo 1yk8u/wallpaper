@@ -109,11 +109,41 @@ async function downloadSmart(url, filename) {
   return false;
 }
 
-/* ---------------- 链接提取 ---------------- */
+/* ---------------- 链接提取 ----------------
+ * 分享口令常见两种脏形态：
+ *   ① 明文整段："风景… https://v.kuaishou.com/JVPUEMk2 复制此链接…"
+ *   ② 整段被 URL 编码后拼上标题："https://v.kuaishou.com/JVPUEMk2%20%22%E9%A3%8E…"
+ * 第 ② 种里百分号编码不含空白字符，旧正则会把标题一起吞进 URL ——
+ * 派单给中转后请求 404，报「无法从链接提取快手作品号」。
+ * 先安全解码还原明文，再提取纯链接；后端 parse-queue.mjs 的 sanitizeUrl 与此同构。
+ * ------------------------------------------------------------------ */
+function safePctDecode(s) {
+  let t = String(s || '');
+  /* 结尾常是残缺编码（如 "…%E5%"），decodeURIComponent 会抛 URIError；
+   * 逐次砍掉末尾不完整的 %XX 再试，最坏只丢标题尾巴，不影响链接本身。 */
+  for (let i = 0; i < 6; i++) {
+    try { return decodeURIComponent(t); } catch (e) {
+      const cut = t.replace(/%[0-9a-fA-F]{0,1}$/, '').replace(/%[0-9a-fA-F]{2}$/, '');
+      if (cut === t) break;
+      t = cut;
+    }
+  }
+  return t;
+}
 function extractURL(text) {
-  const m = String(text || '').match(/https?:\/\/[^\s"'<>（）()【】，。]+/g);
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  let src = raw;
+  if (/%[0-9a-fA-F]{2}/i.test(raw)) {
+    const dec = safePctDecode(raw);
+    if (/https?:\/\//i.test(dec)) src = dec;
+  }
+  const m = src.match(/https?:\/\/[^\s"'<>（）()【】，。]+/g);
   if (!m) return '';
   let u = m[0];
+  /* 兜底：解码未生效时，遇到编码的空白/引号/#/?/& 就视为链接结束 */
+  u = u.split(/%(?:20|22|09|0a|0d|23|3f|26|3c|3e|27|28|29|2c|2e|3b|21)/i)[0];
+  u = u.replace(/%[0-9a-fA-F]{0,1}$/i, '');
   u = u.replace(/[），。、！？！?…．»,]+$/g, '');
   u = u.replace(/[),.;!?]+$/g, '');
   return u;

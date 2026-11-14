@@ -25,7 +25,10 @@ function detectPlatform(u) {
 
 /* ---------- 缓存键：必须与 scripts/parse-queue.mjs 逐字节一致 ---------- */
 function parseCacheKey(u) {
-  const raw = String(u || '').trim().toLowerCase();
+  /* 与后端 cacheKey 同构：先净化链接，避免整段口令 / 编码尾巴污染缓存键 */
+  let s = String(u || '').trim();
+  try { if (typeof extractURL === 'function') s = extractURL(s) || s; } catch (e) {}
+  const raw = s.toLowerCase();
   const ne = raw.match(/(?:music\.)?163\.com\/[^\s]*[?&]id=(\d{4,14})/);
   if (ne) return 'netease:' + ne[1];
   /* 汽水两种分享形态：track_id=（数字）与 /s/<短码>（键统一小写） */

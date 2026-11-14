@@ -70,7 +70,8 @@ const Music = (() => {
       artist: g.artist || '',
       album: '', cover: '',
       audio: '', matched: false,
-      page: (String(raw).match(/https?:\/\/[^\s"'<>]+/) || [])[0] || '',
+      page: (typeof extractURL === 'function' ? extractURL(raw) : '') ||
+            (String(raw).match(/https?:\/\/[^\s"'<>]+/) || [])[0] || '',
       url: raw,
     };
     if (p.key === 'netease' && /^\d{4,14}$/.test(id)) s.audio = outerURL(id);

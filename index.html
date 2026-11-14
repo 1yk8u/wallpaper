@@ -125,6 +125,35 @@
 
       <div id="ph-msg" class="ph-msg hidden"></div>
 
+      <!-- ===== 解析结果回收：图片回到本站，弹窗询问是否入库 ===== -->
+      <div id="ph-catch" class="ph-catch">
+        <div class="ph-catch-head">
+          <span class="ph-catch-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M4.5 19.5h15"/></svg>
+            解析结果回收
+          </span>
+          <span id="ph-catch-state" class="ph-catch-state">等待解析结果…</span>
+        </div>
+        <p class="ph-catch-tip">在工具页复制图片 / 图片链接，或把图片存下来，切回本页就会自动出现在这里并询问是否保存。</p>
+        <div class="ph-catch-actions">
+          <button id="ph-collect" class="btn primary" type="button">一键取回结果</button>
+          <label class="btn ghost ph-filebtn" for="ph-file">选择图片 / 视频<input id="ph-file" type="file" accept="image/*,video/*" multiple hidden></label>
+        </div>
+        <textarea id="ph-urls" class="ph-urls" rows="2" placeholder="也可以把图片直链粘到这里（可一次多条）…" spellcheck="false"></textarea>
+        <div id="ph-thumbs" class="ph-thumbs"></div>
+        <div id="ph-ask" class="ph-ask hidden">
+          <div class="ph-ask-txt">检测到 <b id="ph-ask-n">0</b> 张图片 / 视频，<b>是否保存在壁纸库？</b>
+            <small>保存后会在「壁纸」页永久展示，手机电脑都能看</small>
+          </div>
+          <div class="ph-ask-btns">
+            <button id="ph-yes" class="btn primary" type="button">保存到壁纸库</button>
+            <button id="ph-dl" class="btn ghost" type="button">只下载到设备</button>
+            <button id="ph-no" class="btn ghost" type="button">不要</button>
+          </div>
+        </div>
+        <div id="ph-progress" class="ph-progress hidden"></div>
+      </div>
+
       <details class="howto">
         <summary>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
@@ -133,12 +162,14 @@
         <ol>
           <li>在 App / 网页里点 <b>分享 → 复制链接</b>；</li>
           <li>回到本页点 <b>快捷粘贴</b>，或手动粘进输入框；</li>
-          <li>点 <b>vtool.tv</b> 或 <b>HelloTik</b>：工具会在新窗口打开，链接已自动复制到剪贴板，粘贴即可解析。</li>
+          <li>点 <b>vtool.tv</b> 或 <b>HelloTik</b>：工具在新窗口打开，链接已自动复制，粘贴即可解析；</li>
+          <li>在工具页点 <b>复制图片链接</b> / <b>复制全部图片</b>（或把图片存到手机、直接复制图片本身）；</li>
+          <li>切回本页，下方「解析结果回收」会自动弹出图片，点 <b>保存到壁纸库</b> 即可永久入库。</li>
         </ol>
-        <p class="hint">vtool.tv 覆盖抖音 / 快手 / 小红书 / B站 / TikTok / YouTube 等 21 个平台；HelloTik 免费不限次、免登录，B站 / 快手 / 小红书有专属页。两个站点都不允许被嵌入其它网页，所以只能新窗口打开。</p>
+        <p class="hint">浏览器不允许网页读取另一个标签页的内容，所以结果需要「复制一下再切回来」；本页会自动读剪贴板，多数情况下切回来就直接弹窗，没弹出就点一下「一键取回结果」或把图片选进来。</p>
       </details>
 
-      <p class="fine">视频 / 图片解析已移除自研引擎与 GitHub Actions 云端代抓，由上述第三方站点完成。音乐解析为本页自研的轻量实现。下载与版权请遵守对应平台规则，作品版权归原作者所有。</p>
+      <p class="fine">视频 / 图片解析由上述第三方站点完成；本站负责「结果回收 → 询问是否保存到壁纸库」这一步，入库走仓库直连、永久保存。音乐解析为本页自研。下载与版权请遵守对应平台规则，作品版权归原作者所有。</p>
     </div>
 
     <!-- ===== 自研音乐解析（纯前端，四平台） ===== -->
@@ -195,7 +226,7 @@
 
 <script src="core.js?v=20261107H"></script>
 <script src="app.js?v=20261101A"></script>
-<script src="parsehub.js?v=20261113A"></script>
+<script src="parsehub.js?v=20261114B"></script>
 <script src="music.js?v=20261114A"></script>
 <script src="payment.js?v=20261114A"></script>
 </body>

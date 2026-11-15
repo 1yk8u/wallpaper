@@ -1,14 +1,25 @@
 {
-  "kind": "music",
-  "platform": "qishui",
-  "id": "7700074513091168306",
-  "title": "Gasolina（何为张力）",
-  "artist": "Mexlon",
-  "album": "Gasolina（何为张力）",
-  "cover": "https://p3-luna.douyinpic.com/img/tos-cn-v-2774c002/okJzQAbQaWAL1INUAsriiCDEAABiPtEdwVw3E",
-  "audio": "https://music.163.com/song/media/outer/url?id=3461003710.mp3",
-  "matched": true,
-  "matchedId": "3461003710",
-  "ts": "2026-11-15T03:53:58.807Z",
-  "key": "qishui:ixkmfm6u"
+  "key": "qishui:ixkmfm6u",
+  "ok": true,
+  "data": {
+    "kind": "music",
+    "platform": "qishui",
+    "id": "7700074513091168306",
+    "title": "Gasolina（何为张力）",
+    "artist": "Mexlon",
+    "album": "",
+    "cover": "data/covers/cv_6b203a4d72fa0886.jpg",
+    "localAudio": "data/audio/au_6b203a4d72fa0886.m4a",
+    "audioExt": "m4a",
+    "audioSize": 2308402,
+    "audioMime": "audio/mp4",
+    "matched": false,
+    "source": "汽水官方原版音频（自家仓库同源缓存）",
+    "key": "qishui:ixkmfm6u",
+    "ts": "2026-11-15T04:54:58.821Z",
+    "via": "汽水官方原版音频（自家仓库同源缓存）",
+    "platformName": "汽水音乐"
+  },
+  "engine": "1.0.0",
+  "ts": "2026-11-15T04:54:58.824Z"
 }

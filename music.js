@@ -1,19 +1,29 @@
 /* =====================================================================
- * music.js —— 自研音乐解析 v4（网易云 + 汽水音乐）
+ * music.js —— 自研音乐解析 v5（网易云 + 汽水音乐）
  *
- * 原则：零第三方服务。
- *   ① 本地识别：分享链接/口令 → 平台 + ID + 歌名（毫秒级出卡片）
- *   ② 播放/下载直链：网易云自家 outer 端点（music.163.com 自己的接口）
- *   ③ 元数据（歌名/歌手/封面）与汽水匹配：走自家仓库中转
- *      （repository_dispatch → GitHub Actions 调平台官方接口 → parse-cache）
+ * 用户要求：汽水、网易云都「不走直连」，解析完的音乐要有图标。
+ *   v4 把第三方音频 URL 挂在 <audio src> / 下载 / window.open 上，会过期、
+ *   会被风控、页面里也看得见第三方地址 —— 这版整体换掉。
+ *
+ * 现在的链路（页面 DOM 里一个第三方音频地址都没有）：
+ *   ① 本地识别：分享链接/口令 → 平台 + ID + 歌名（毫秒级出卡片，带平台图标/音符/封面位）
+ *   ② 自家仓库代抓：GitHub Actions 调两家官方接口，把【音频字节 + 封面字节】
+ *      抓进仓库 data/audio/ 与 data/covers/，只回传同源相对路径 localAudio / cover
+ *   ③ 浏览器只 fetch 同源文件 → 本地 Blob → blob: 地址才允许进播放器 / 下载 / 入库。
+ *      ensureBlob() 会硬校验路径格式，绝不接受 http(s) 开头的音频地址。
  *   ④ 存入壁纸库：WPGH 仓库直连，永久保存进「音乐」分类
+ *
+ * 附带好处：汽水官方音频 URL 带时间戳签名、几十分钟就 403；
+ *   落到自家仓库后变成永久有效的同源静态文件，首次抓取后一直秒出。
  * ===================================================================== */
 'use strict';
 
 const Music = (() => {
   const NOTE = '<path d="M9 17.5V6.4l9-2V15.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.4" cy="17.6" r="2.6" fill="currentColor"/><circle cx="15.4" cy="15.6" r="2.6" fill="currentColor"/>';
   const svg = () => `<svg viewBox="0 0 24 24" aria-hidden="true">${NOTE}</svg>`;
-  const NE = 'https://music.163.com';
+  const NE_HOME = 'https://music.163.com';
+  /* 唯一允许被 fetch 的音频路径：自家仓库的相对路径，http(s) 一律拒绝 */
+  const LOCAL_AUDIO_RE = /^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i;
 
   const PLATS = [
     { key: 'netease', name: '网易云音乐', short: '网易云', color: '#e60026',
@@ -28,17 +38,16 @@ const Music = (() => {
   ];
 
   const DEMOS = [
-    { key: 'netease', url: 'https://music.163.com/song?id=186016', text: '分享《晴天》给你 - 周杰伦' },
-    { key: 'qishui', url: 'https://music.douyin.com/qishui/share/track?track_id=7170454119939835942', text: '汽水音乐 分享《西海情歌》给你 - 刀郎' },
+    { key: 'netease', url: 'https://music.163.com/song?id=33894312', text: '分享《情非得已 (童声版)》给你 - 群星' },
+    { key: 'qishui', url: 'https://qishui.douyin.com/s/iXKMfM6u/', text: 'Gasolina（何为张力）》@汽水音乐' },
   ];
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  const outerURL = id => NE + '/song/media/outer/url?id=' + encodeURIComponent(id) + '.mp3';
   const safeName = s => (String(s.title || 'song') + (s.artist && !/官方|打开原曲/.test(s.artist) ? ' - ' + s.artist : ''))
-    .replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) + '.mp3';
+    .replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) + '.' + (s.audioExt === 'm4a' ? 'm4a' : 'mp3');
 
   function detect(text) { return PLATS.find(p => p.test.test(String(text || ''))) || null; }
   function brand(p, size) {
@@ -46,7 +55,12 @@ const Music = (() => {
   }
   function guessText(t) {
     const s = String(t || '');
-    const m = s.match(/《([^》]{1,60})》/);
+    let m = s.match(/《([^》]{1,60})》/);
+    /* 汽水口令常是半截书名号："Gasolina（何为张力）》@汽水音乐 https://..." */
+    if (!m) {
+      const half = s.match(/^\s*([^《》@\s][^《》@]{0,59})》/);
+      if (half) m = [null, half[1].trim()];
+    }
     let title = m ? m[1] : '', artist = '';
     const dash = s.match(/《[^》]+》\s*[-—–]\s*([^\s,，。]{1,24})/);
     if (dash) artist = dash[1];
@@ -64,23 +78,28 @@ const Music = (() => {
     let id = m ? (m[1] || m[2] || '') : '';
     if (p.key === 'qishui' && id) id = id.toLowerCase();   /* 短码键统一小写（与中转一致） */
     const g = guessText(raw);
-    const s = {
+    return {
       platform: p.key, platformName: p.name, color: p.color, id,
       title: g.title || (id ? p.short + ' · 歌曲 ' + id.slice(0, 12) : p.name + ' 分享歌曲'),
       artist: g.artist || '',
       album: '', cover: '',
-      audio: '', matched: false,
+      localAudio: '', audioExt: '', source: '', matched: false,
+      blobUrl: '',
       page: (typeof extractURL === 'function' ? extractURL(raw) : '') ||
             (String(raw).match(/https?:\/\/[^\s"'<>]+/) || [])[0] || '',
       url: raw,
     };
-    if (p.key === 'netease' && /^\d{4,14}$/.test(id)) s.audio = outerURL(id);
-    return s;
   }
 
-  /* ===== 与自家仓库对账：缓存有就补全，没有就寄单代抓 ===== */
-  async function enrich(s, row, noteEl) {
-    /* 键优先走 parseCacheKey（与 extractor/中转逐字节一致），兜底用平台:ID */
+  /* 缓存里可能是总缓存 entry，也可能是轻量 { ok, data }，统一摊平 */
+  function flat(e) {
+    if (!e || typeof e !== 'object') return null;
+    if (e.data && typeof e.data === 'object') return e.data;
+    return e;
+  }
+  const good = e => !!(e && e.kind === 'music' && !e.err && e.localAudio && LOCAL_AUDIO_RE.test(e.localAudio));
+
+  function cacheKeyOf(s) {
     let key = '';
     try {
       if (typeof parseCacheKey === 'function') key = parseCacheKey(s.page || s.url) || '';
@@ -89,31 +108,39 @@ const Music = (() => {
       key = (s.platform === 'netease' && /^\d{4,14}$/.test(s.id)) ? 'netease:' + s.id
         : (s.platform === 'qishui' && s.id) ? 'qishui:' + s.id : '';
     }
+    return key;
+  }
+
+  /* ===== 向自家仓库要【同源音频】，拿不到就派单让 Actions 抓 ===== */
+  async function enrich(s, row, noteEl) {
+    const key = cacheKeyOf(s);
     if (!key || typeof serverCacheGet !== 'function') { failMeta(s, row, noteEl, '无法识别这条分享'); return; }
     try {
-      let e = await serverCacheGet(key);
-      const fresh = e && !e.err && e.kind === 'music';
-      if (!fresh) {
-        if (typeof relayDispatch !== 'function') { failMeta(s, row, noteEl, '仓库中转不可用'); return; }
-        if (noteEl) noteEl.textContent = '寄给自家仓库取元数据…';
+      let e = flat(await serverCacheGet(key));
+      if (!good(e)) {
+        /* 旧缓存里只有第三方 audio 直链 → 一律不认，重新让自家仓库抓一遍 */
+        if (typeof relayDispatch !== 'function') { failMeta(s, row, noteEl, '自家仓库中转不可用'); return; }
+        if (noteEl) noteEl.textContent = '让自家仓库抓官方音频…（首次约半分钟，之后秒出）';
         const since = Date.now();
-        /* 必须传纯链接：整段分享口令会让中转算出不一样的缓存键，结果永远等不到 */
-        await relayDispatch(s.page || s.url, key);
-        e = await relayPoll(key, since, (i, sec) => { if (noteEl) noteEl.textContent = '仓库取元数据… ' + sec + 's'; });
+        try { await relayDispatch(s.page || s.url, key); }
+        catch (err) { if (!(err && err.soft)) throw err; }   /* 软失败：派单可能已寄出，继续等 */
+        const got = await relayPoll(key, since, (i, sec) => {
+          if (noteEl) noteEl.textContent = '自家仓库抓音频中… ' + sec + 's';
+        });
+        e = flat(got) || e;
       }
-      if (e && e.kind === 'music' && !e.err) applyMeta(s, e, row);
-      else failMeta(s, row, noteEl, '元数据没取到，可点「打开原曲」收听');
+      if (good(e)) applyMeta(s, e, row);
+      else failMeta(s, row, noteEl, '自家仓库还在准备音频，再点一次解析即可');
     } catch (err) {
-      failMeta(s, row, noteEl, '元数据获取失败（不影响本地已识别的信息）');
+      failMeta(s, row, noteEl, '仓库取音频失败，再点一次解析即可');
     }
   }
 
-  /* 元数据没拿到时不能让卡片永远停在「取直链中…」且按钮全灰 */
   function failMeta(s, row, note, msg) {
     if (note) note.textContent = msg;
-    if (!row || s.audio) return;
+    if (!row || s.localAudio) return;
     const media = row.querySelector('.mu-media');
-    if (media) media.innerHTML = '<span class="mu-noaudio">没有可下载直链 · 点「打开原曲」收听</span>';
+    if (media) media.innerHTML = '<span class="mu-noaudio">自家仓库还没备好音频 · 可先点「打开原曲」</span>';
   }
 
   function applyMeta(s, e, row) {
@@ -121,7 +148,9 @@ const Music = (() => {
     s.artist = e.artist || s.artist;
     s.album = e.album || s.album;
     s.cover = e.cover || s.cover;
-    if (e.audio) s.audio = e.audio;
+    s.localAudio = e.localAudio || '';
+    s.audioExt = e.audioExt || (/\.m4a$/i.test(s.localAudio) ? 'm4a' : 'mp3');
+    s.source = e.source || '';
     s.matched = !!e.matched;
     if (!row) return;
     const ti = row.querySelector('.mu-title');
@@ -136,56 +165,87 @@ const Music = (() => {
       }
     }
     const media = row.querySelector('.mu-media');
-    if (media && s.audio) {
-      media.innerHTML = `<audio controls preload="none" src="${esc(s.audio)}"></audio>` +
-        (s.matched ? '<span class="mu-match">汽水未开放直链 · 已匹配网易云同名版本</span>' : '');
+    if (media && s.localAudio) {
+      /* 不挂任何第三方 src：先显示准备中，prefetch 拿到同源 Blob 再点亮播放器 */
+      if (!media.querySelector('audio')) media.innerHTML = '<span class="mu-pending">正在准备本地音频…</span>';
       const btn = row.querySelector('.mu-btn-dl');
-      if (btn) { btn.disabled = false; btn.onclick = () => download(s, btn); }
+      if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');
       if (sv) sv.disabled = false;
-    } else if (media && !s.audio) {
-      media.innerHTML = '<span class="mu-noaudio">没有可下载直链 · 点「打开原曲」收听</span>';
+      prefetch(s, row);
+    } else if (media) {
+      media.innerHTML = '<span class="mu-noaudio">暂无可下载音频 · 点「打开原曲」收听</span>';
     }
     const note = row.querySelector('.mu-enrich');
-    if (note) note.textContent = s.matched ? '元数据已就绪（汽水 → 网易云同名匹配）' : '元数据已就绪';
+    if (note && !s.blobUrl) note.textContent = s.source || '同源音频已就绪，正在准备本地文件…';
   }
 
-  /* ===== 播放/下载：网易云自家 outer 端点直取 blob ===== */
-  async function grabAudio(s) {
-    if (s.blobUrl) {
-      try { const r = await fetch(s.blobUrl); if (r.ok) return await r.blob(); } catch (e) {}
-    }
-    if (!s.audio) return null;
-    try {
-      const r = await fetch(s.audio, { signal: AbortSignal.timeout(60000) });
-      if (!r.ok) return null;
-      const b = await r.blob();
-      if (b && b.size > 20000) {
+  /* ===== 唯一允许联网取音频的地方：只 fetch 自家仓库的同源相对路径 =====
+   * 硬校验 LOCAL_AUDIO_RE，任何 http(s) 地址直接拒绝。
+   * 播放器 src / 下载 href / 入库 bytes 全部只用下面的 blob: 地址。 */
+  async function ensureBlob(s) {
+    if (s.blobUrl) return s.blobUrl;
+    if (s._blobPromise) return s._blobPromise;
+    if (!LOCAL_AUDIO_RE.test(s.localAudio || '')) return '';
+    s._blobPromise = (async () => {
+      try {
+        const r = await fetch(s.localAudio, { signal: AbortSignal.timeout(60000) });
+        if (!r.ok) return '';
+        const b = await r.blob();
+        if (!b || b.size < 20000 || /text\/html|application\/json/i.test(b.type || '')) return '';
+        s.blob = b;
         s.blobUrl = URL.createObjectURL(b);
-        return b;
-      }
-    } catch (e) { /* 跨域/版权页 → 走打开原曲兜底 */ }
+        return s.blobUrl;
+      } catch (e) { return ''; }
+    })();
+    const u = await s._blobPromise;
+    if (!u) s._blobPromise = null;    /* 失败允许下次重试（文件可能还没提交上来） */
+    return u;
+  }
+
+  /* 后台静默准备：卡片先毫秒级渲染，blob 就绪后把播放器点亮 */
+  async function prefetch(s, row) {
+    const u = await ensureBlob(s);
+    if (!u || !row) return;
+    const media = row.querySelector('.mu-media');
+    if (!media) return;
+    const badge = (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
+      '<span class="mu-local">同源文件 · 本地播放</span>';
+    if (!media.querySelector('audio')) {
+      media.innerHTML = `<audio controls preload="none" src="${esc(u)}"></audio>` + badge;
+    } else {
+      const a = media.querySelector('audio');
+      a.src = u; a.load();
+      if (!media.querySelector('.mu-local')) media.insertAdjacentHTML('beforeend', badge);
+    }
+    const note = row.querySelector('.mu-enrich');
+    if (note) note.textContent = s.source || '音频已就绪（本地文件）';
+  }
+
+  async function grabAudio(s) {
+    const u = await ensureBlob(s);
+    if (!u) return null;
+    if (s.blob) return s.blob;
+    try { const r = await fetch(u); if (r.ok) return await r.blob(); } catch (e) {}
     return null;
   }
 
   async function download(s, btn) {
-    if (!s.audio) { window.open(s.page || s.url, '_blank', 'noopener'); return; }
     const name = safeName(s);
     const old = btn.textContent;
-    btn.disabled = true; btn.textContent = '获取中…';
+    btn.disabled = true; btn.textContent = s.blobUrl ? '保存中…' : '准备中…';
     const blob = await grabAudio(s);
     if (blob) {
       const a = document.createElement('a');
       a.href = s.blobUrl; a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
       btn.textContent = '已保存 ✓';
-      const au = btn.closest('.mu-item') && btn.closest('.mu-item').querySelector('audio');
-      if (au) { au.src = s.blobUrl; au.load(); }
     } else {
-      /* 直链跨域取不到 blob：打开音频页，手机长按即可保存 */
-      window.open(s.audio, '_blank', 'noopener');
-      btn.textContent = '已打开 · 长按保存';
-      if (typeof toast === 'function') toast('浏览器跨域取不到文件，已打开音频页：手机长按 → 存储', 'warn');
+      /* 绝不打开第三方音频页：只提示同源文件还没就绪 */
+      btn.textContent = '音频没取到';
+      const note = btn.closest('.mu-item') && btn.closest('.mu-item').querySelector('.mu-enrich');
+      if (note) note.textContent = '自家仓库里的音频还没就绪，再点一次解析或稍后重试';
+      if (typeof toast === 'function') toast('音频没取到，可再点一次解析', 'warn');
     }
     setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
   }
@@ -226,12 +286,15 @@ const Music = (() => {
     }
   }
 
-  /* ===== 卡片 ===== */
+  /* ===== 卡片：平台彩色图标 + 音符图标 + 同源封面 ===== */
   function card(s) {
-    const media = s.audio
-      ? `<audio controls preload="none" src="${esc(s.audio)}"></audio>` +
-        (s.matched ? '<span class="mu-match">汽水未开放直链 · 已匹配网易云同名版本</span>' : '')
-      : '<span class="mu-noaudio">暂无下载直链 · 可点「打开原曲」</span>';
+    const hasSrc = !!s.localAudio;
+    const media = s.blobUrl
+      ? `<audio controls preload="none" src="${esc(s.blobUrl)}"></audio>` +
+        (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
+        '<span class="mu-local">同源文件 · 本地播放</span>'
+      : (hasSrc ? '<span class="mu-pending">正在准备本地音频…</span>'
+                : '<span class="mu-noaudio">等自家仓库备音频… · 可先点「打开原曲」</span>');
     return `<div class="mu-item" style="--mc:${s.color}">
       <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg()}</span></div>
       <div class="mu-info">
@@ -241,8 +304,8 @@ const Music = (() => {
         <div class="mu-enrich"></div>
       </div>
       <div class="mu-actions">
-        <button type="button" class="mu-btn-dl" ${s.audio ? '' : 'disabled'}>下载音乐</button>
-        <button type="button" class="mu-btn-save" ${s.audio ? '' : 'disabled'}>存到壁纸库</button>
+        <button type="button" class="mu-btn-dl">下载音乐</button>
+        <button type="button" class="mu-btn-save">存到壁纸库</button>
         <button type="button" class="mu-btn-open">打开原曲</button>
       </div>
     </div>`;
@@ -250,18 +313,12 @@ const Music = (() => {
 
   function bindCard(row, s) {
     const dl = row.querySelector('.mu-btn-dl');
-    if (dl) { dl.disabled = !s.audio; dl.onclick = () => download(s, dl); }
+    if (dl) dl.onclick = () => download(s, dl);
     const sv = row.querySelector('.mu-btn-save');
-    if (sv) { sv.disabled = !s.audio; sv.onclick = () => saveToLibrary(s, sv); }
+    if (sv) sv.onclick = () => saveToLibrary(s, sv);
     const op = row.querySelector('.mu-btn-open');
-    if (op) op.onclick = () => window.open(s.page || NE, '_blank', 'noopener');
-    const a = row.querySelector('audio');
-    if (a) a.addEventListener('error', () => {
-      if (a.dataset.tried) return;
-      a.dataset.tried = '1';
-      /* 只有网易云才可能用 outer 端点兜底；汽水匹配来的音频失败就不再折腾 */
-      if (s.platform === 'netease' && s.id) { a.src = outerURL(s.id); a.load(); }
-    });
+    if (op) op.onclick = () => window.open(s.page || NE_HOME, '_blank', 'noopener');
+    /* 本地 blob 播放器不会因第三方直链过期而报错，无需备用源切换 */
   }
 
   function renderInto(container, songs, note) {
@@ -274,7 +331,11 @@ const Music = (() => {
         const p = PLATS.find(x => x.key === sc.platform) || PLATS[0];
         return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(sc)}</div>`;
       }).join('') + '</div>' +
-      '<div class="mu-foot">本地毫秒级出卡片；歌名/歌手/封面与汽水直链由自家仓库中转补齐（GitHub Actions 调平台官方接口）。点【下载音乐】存 MP3，点【存到壁纸库】永久进「壁纸 → 音乐」。版权归原平台及权利人，仅个人试听收藏。</div>';
+      '<div class="mu-foot">本地毫秒级出卡片；歌名 / 歌手 / 封面 / 官方音频由自家仓库代抓后存成同源文件，' +
+      '汽水优先官方原版（M4A），网易云为官方试听（MP3）。页面不出现任何第三方音频地址，' +
+      '播放、下载、入库都只用本地 blob: 文件。首次解析约半分钟，之后同源缓存秒出。' +
+      '点【下载音乐】按原格式保存，点【存到壁纸库】永久进「壁纸 → 音乐」。' +
+      '版权归原平台及权利人，仅个人试听收藏。</div>';
     box.querySelectorAll('.mu-row').forEach((row, i) => bindCard(row, songs[i]));
     return box;
   }
@@ -297,7 +358,7 @@ const Music = (() => {
     return s;
   }
 
-  /* ===== 双平台自测：识别 + 直链 + 自家缓存 三项体检 ===== */
+  /* ===== 双平台自测：识别 + 同源音频 + 自家缓存 三项体检 ===== */
   async function selftest(container) {
     const box = typeof container === 'string' ? $(container) : container;
     if (!box) return [];
@@ -307,51 +368,36 @@ const Music = (() => {
     const line = document.createElement('div');
     line.className = 'mu-testline';
     line.innerHTML = checked.map(x => `<span class="mu-test ${x.ok ? 'ok' : 'bad'}">${x.ok ? '✔' : '✘'} 识别 ${esc(x.p.short)}</span>`).join('') +
-      '<span class="mu-test" id="mu-test-audio">直链检测中…</span>' +
+      '<span class="mu-test" id="mu-test-audio">同源音频检测中…</span>' +
       '<span class="mu-test" id="mu-test-cache">自家缓存检测中…</span>';
     const head = box.querySelector('.mu-head');
     if (head) head.insertAdjacentElement('afterend', line);
 
-    /* 直链体检用 <audio> 元素：媒体标签不受 CORS 限制，和真实播放/下载一致。
-     * 旧版用 fetch 探测，网易云不给 CORS 头必然报错，还会白等 12 秒并误导用户。 */
-    const elA = $('mu-test-audio');
-    /* 先给确定答复，不让自测卡在「检测中…」；后台探测成功再升级为「可播放」 */
-    if (elA) { elA.className = 'mu-test'; elA.textContent = '直链受限 · 下载会打开音频页'; }
-    try {
-      const au = document.createElement('audio');
-      au.preload = 'metadata';
-      let settled = false;
-      const finish = (ok, txt) => {
-        if (settled) return;
-        settled = true;
-        if (elA) { elA.className = 'mu-test ' + (ok ? 'ok' : ''); elA.textContent = txt; }
-        try { au.removeAttribute('src'); au.load(); } catch (e) {}
-      };
-      au.addEventListener('loadedmetadata', () => finish(true, '直链可播放'));
-      au.addEventListener('error', () => finish(false, '直链受限 · 下载会打开音频页'));
-      setTimeout(() => finish(false, '直链受限 · 下载会打开音频页'), 8000);
-      au.src = songs[0].audio;
-    } catch (e) {
-      if (elA) { elA.className = 'mu-test'; elA.textContent = '直链检测跳过 · 下载会打开音频页'; }
+    /* 同源音频体检：只认自家仓库的相对路径，HEAD 一下确认文件已在 Pages 上。
+     * 旧版拿第三方直链塞 <audio src> 探测，既暴露地址又会被风控，已删除。 */
+    let localOK = 0, cacheOK = 0;
+    for (const sc of songs) {
+      const key = cacheKeyOf(sc);
+      let e = null;
+      try { e = flat((typeof serverCacheGet === 'function') ? await serverCacheGet(key) : null); } catch (err) {}
+      if (e && e.kind === 'music' && !e.err) cacheOK++;
+      if (good(e)) {
+        try {
+          const r = await fetch(e.localAudio, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
+          if (r.ok) localOK++;
+        } catch (err) {}
+      }
     }
-    /* 自家缓存体检 */
-    try {
-      const hits = [];
-      for (const sc of songs) {
-        let key = '';
-        try { if (typeof parseCacheKey === 'function') key = parseCacheKey(sc.page || sc.url) || ''; } catch (e) {}
-        if (!key) key = (sc.platform === 'netease' ? 'netease:' : 'qishui:') + sc.id;
-        const e = (typeof serverCacheGet === 'function') ? await serverCacheGet(key) : null;
-        hits.push(!!(e && e.kind === 'music' && !e.err));
-      }
-      const el = $('mu-test-cache');
-      if (el) {
-        el.className = 'mu-test ' + (hits.some(Boolean) ? 'ok' : '');
-        el.textContent = '自家缓存 ' + hits.filter(Boolean).length + '/' + hits.length;
-      }
-    } catch (e) {
-      const el = $('mu-test-cache');
-      if (el) { el.className = 'mu-test bad'; el.textContent = '缓存检测失败'; }
+    const elA = $('mu-test-audio');
+    if (elA) {
+      elA.className = 'mu-test ' + (localOK === songs.length ? 'ok' : '');
+      elA.textContent = '同源音频 ' + localOK + '/' + songs.length +
+        (localOK === songs.length ? ' · 零第三方直连' : ' · 首次解析后代抓');
+    }
+    const elC = $('mu-test-cache');
+    if (elC) {
+      elC.className = 'mu-test ' + (cacheOK ? 'ok' : '');
+      elC.textContent = '自家缓存 ' + cacheOK + '/' + songs.length;
     }
     return checked;
   }
@@ -392,7 +438,9 @@ const Music = (() => {
 .mu-media{min-height:32px}
 .mu-item audio{width:100%;height:32px;display:block}
 .mu-noaudio{font-size:11px;color:#98a1b0;background:#f5f7fb;border-radius:7px;padding:4px 8px;display:inline-block}
+.mu-pending{font-size:11px;color:#0369a1;background:#f0f9ff;border-radius:7px;padding:4px 8px;display:inline-block}
 .mu-match{display:inline-block;margin-top:4px;font-size:10px;color:#b45309;background:#fffbeb;border-radius:6px;padding:2px 6px}
+.mu-local{display:inline-block;margin-top:4px;margin-left:5px;font-size:10px;color:#0f766e;background:#f0fdfa;border-radius:6px;padding:2px 6px}
 .mu-enrich{font-size:10.5px;color:#98a1b0;margin-top:3px;min-height:14px}
 .mu-actions{display:grid;grid-template-columns:1fr;gap:5px;flex:none;width:118px}
 .mu-actions button{border:none;border-radius:9px;padding:7px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
@@ -446,5 +494,5 @@ const Music = (() => {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  return { parse, runInto, selftest, detect, renderInto, outerURL, PLATS, DEMOS };
+  return { parse, runInto, selftest, detect, renderInto, ensureBlob, cacheKeyOf, LOCAL_AUDIO_RE, PLATS, DEMOS };
 })();

@@ -9,8 +9,11 @@
  *   ① 本地识别：分享链接/口令 → 平台 + ID + 歌名（毫秒级出卡片，带平台图标/音符/封面位）
  *   ② 自家仓库代抓：GitHub Actions 调两家官方接口，把【音频字节 + 封面字节】
  *      抓进仓库 data/audio/ 与 data/covers/，只回传同源相对路径 localAudio / cover
- *   ③ 浏览器只 fetch 同源文件 → 本地 Blob → blob: 地址才允许进播放器 / 下载 / 入库。
- *      ensureBlob() 会硬校验路径格式，绝不接受 http(s) 开头的音频地址。
+ *   ③ 浏览器直接用本站同源文件：播放器 / 下载都指向 data/audio/ 相对路径。
+ *      moov 在文件头，支持 Range 流式播放，点一下就响；不用先把整首歌
+ *      读进内存（实测 2.3MB 从 Pages 下完要 90 秒，那才是真正让人转圈的地方）。
+ *      只有「存到壁纸库」才 fetch 同源字节转本地 Blob 提交。
+ *      ensureBlob() 硬校验路径格式，绝不接受 http(s) 开头的音频地址。
  *   ④ 存入壁纸库：WPGH 仓库直连，永久保存进「音乐」分类
  *
  * 附带好处：汽水官方音频 URL 带时间戳签名、几十分钟就 403；
@@ -166,23 +169,24 @@ const Music = (() => {
     }
     const media = row.querySelector('.mu-media');
     if (media && s.localAudio) {
-      /* 不挂任何第三方 src：先显示准备中，prefetch 拿到同源 Blob 再点亮播放器 */
-      if (!media.querySelector('audio')) media.innerHTML = '<span class="mu-pending">正在准备本地音频…</span>';
+      /* 本站同源文件直接给 audio：流式加载、点一下就响，不用等整首下完 */
+      media.innerHTML = `<audio controls preload="none" src="${esc(s.localAudio)}"></audio>` +
+        (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
+        '<span class="mu-local">本站同源文件 · 秒开播放</span>';
       const btn = row.querySelector('.mu-btn-dl');
       if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');
       if (sv) sv.disabled = false;
-      prefetch(s, row);
     } else if (media) {
       media.innerHTML = '<span class="mu-noaudio">暂无可下载音频 · 点「打开原曲」收听</span>';
     }
     const note = row.querySelector('.mu-enrich');
-    if (note && !s.blobUrl) note.textContent = s.source || '同源音频已就绪，正在准备本地文件…';
+    if (note) note.textContent = s.source || '同源音频已就绪，可直接播放 / 下载';
   }
 
-  /* ===== 唯一允许联网取音频的地方：只 fetch 自家仓库的同源相对路径 =====
-   * 硬校验 LOCAL_AUDIO_RE，任何 http(s) 地址直接拒绝。
-   * 播放器 src / 下载 href / 入库 bytes 全部只用下面的 blob: 地址。 */
+  /* ===== 只在「存到壁纸库」时才取整首字节 =====
+   * 播放 / 下载都用同源 src + 浏览器流式，不需要这一步。
+   * 硬校验 LOCAL_AUDIO_RE，任何 http(s) 地址直接拒绝。 */
   async function ensureBlob(s) {
     if (s.blobUrl) return s.blobUrl;
     if (s._blobPromise) return s._blobPromise;
@@ -203,25 +207,6 @@ const Music = (() => {
     return u;
   }
 
-  /* 后台静默准备：卡片先毫秒级渲染，blob 就绪后把播放器点亮 */
-  async function prefetch(s, row) {
-    const u = await ensureBlob(s);
-    if (!u || !row) return;
-    const media = row.querySelector('.mu-media');
-    if (!media) return;
-    const badge = (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
-      '<span class="mu-local">同源文件 · 本地播放</span>';
-    if (!media.querySelector('audio')) {
-      media.innerHTML = `<audio controls preload="none" src="${esc(u)}"></audio>` + badge;
-    } else {
-      const a = media.querySelector('audio');
-      a.src = u; a.load();
-      if (!media.querySelector('.mu-local')) media.insertAdjacentHTML('beforeend', badge);
-    }
-    const note = row.querySelector('.mu-enrich');
-    if (note) note.textContent = s.source || '音频已就绪（本地文件）';
-  }
-
   async function grabAudio(s) {
     const u = await ensureBlob(s);
     if (!u) return null;
@@ -230,24 +215,24 @@ const Music = (() => {
     return null;
   }
 
-  async function download(s, btn) {
-    const name = safeName(s);
+  function download(s, btn) {
     const old = btn.textContent;
-    btn.disabled = true; btn.textContent = s.blobUrl ? '保存中…' : '准备中…';
-    const blob = await grabAudio(s);
-    if (blob) {
-      const a = document.createElement('a');
-      a.href = s.blobUrl; a.download = name;
-      document.body.appendChild(a); a.click(); a.remove();
-      btn.textContent = '已保存 ✓';
-    } else {
-      /* 绝不打开第三方音频页：只提示同源文件还没就绪 */
+    if (!s.localAudio || !LOCAL_AUDIO_RE.test(s.localAudio)) {
       btn.textContent = '音频没取到';
       const note = btn.closest('.mu-item') && btn.closest('.mu-item').querySelector('.mu-enrich');
-      if (note) note.textContent = '自家仓库里的音频还没就绪，再点一次解析或稍后重试';
+      if (note) note.textContent = '自家仓库里的音频还没就绪，再点一次解析';
       if (typeof toast === 'function') toast('音频没取到，可再点一次解析', 'warn');
+      setTimeout(() => { btn.textContent = old; }, 3500);
+      return;
     }
-    setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3500);
+    /* 同源相对路径 + download 属性：浏览器原生流式下载，立刻开始，
+     * 不用先把 2~4MB 整首读进内存，也绝不打开任何第三方页面。 */
+    const a = document.createElement('a');
+    a.href = s.localAudio;
+    a.download = safeName(s);
+    document.body.appendChild(a); a.click(); a.remove();
+    btn.textContent = '已开始下载 ✓';
+    setTimeout(() => { btn.textContent = old; }, 3500);
   }
 
   /* ===== 存到壁纸库（音乐分类，永久保存） ===== */
@@ -288,13 +273,11 @@ const Music = (() => {
 
   /* ===== 卡片：平台彩色图标 + 音符图标 + 同源封面 ===== */
   function card(s) {
-    const hasSrc = !!s.localAudio;
-    const media = s.blobUrl
-      ? `<audio controls preload="none" src="${esc(s.blobUrl)}"></audio>` +
+    const media = s.localAudio
+      ? `<audio controls preload="none" src="${esc(s.localAudio)}"></audio>` +
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
-        '<span class="mu-local">同源文件 · 本地播放</span>'
-      : (hasSrc ? '<span class="mu-pending">正在准备本地音频…</span>'
-                : '<span class="mu-noaudio">等自家仓库备音频… · 可先点「打开原曲」</span>');
+        '<span class="mu-local">本站同源文件 · 秒开播放</span>'
+      : '<span class="mu-noaudio">等自家仓库备音频… · 可先点「打开原曲」</span>';
     return `<div class="mu-item" style="--mc:${s.color}">
       <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg()}</span></div>
       <div class="mu-info">
@@ -333,7 +316,8 @@ const Music = (() => {
       }).join('') + '</div>' +
       '<div class="mu-foot">本地毫秒级出卡片；歌名 / 歌手 / 封面 / 官方音频由自家仓库代抓后存成同源文件，' +
       '汽水优先官方原版（M4A），网易云为官方试听（MP3）。页面不出现任何第三方音频地址，' +
-      '播放、下载、入库都只用本地 blob: 文件。首次解析约半分钟，之后同源缓存秒出。' +
+      '播放 / 下载直接走本站同源文件（流式秒开，不用等整首下完），只有入库才取字节转本地文件。' +
+      '首次解析约半分钟，之后同源缓存秒出。' +
       '点【下载音乐】按原格式保存，点【存到壁纸库】永久进「壁纸 → 音乐」。' +
       '版权归原平台及权利人，仅个人试听收藏。</div>';
     box.querySelectorAll('.mu-row').forEach((row, i) => bindCard(row, songs[i]));

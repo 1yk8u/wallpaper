@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-14T14:25:14.535Z",
+  "updated": "2026-11-15T03:53:59.609Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7248,6 +7248,19 @@
         "url": "https://p2.a.yximgs.com/upic/2026/09/27/00/BMjAyNjA5MjcwMDI2MDNfMjM2NDE2OTgzNV8yMTAyMTM0NDYwOTFfMl82_B6f4743084d466af3eb073f9e4272cb8f.jpg?clientCacheKey=3xtvsm3ayniyhzq.jpg&di=acd07f51&bp=10000"
       },
       "ts": "2026-11-14T14:25:13.734Z"
+    },
+    "qishui:ixkmfm6u": {
+      "kind": "music",
+      "platform": "qishui",
+      "id": "7700074513091168306",
+      "title": "Gasolina（何为张力）",
+      "artist": "Mexlon",
+      "album": "Gasolina（何为张力）",
+      "cover": "https://p3-luna.douyinpic.com/img/tos-cn-v-2774c002/okJzQAbQaWAL1INUAsriiCDEAABiPtEdwVw3E",
+      "audio": "https://music.163.com/song/media/outer/url?id=3461003710.mp3",
+      "matched": true,
+      "matchedId": "3461003710",
+      "ts": "2026-11-15T03:53:58.807Z"
     }
   },
   "engine": "1.0.0"

@@ -20,10 +20,28 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import {
-  parse, extractURL, normalizeKey, resultKey, detectPlatform, ENGINE_VERSION,
-} from './engine.mjs';
 import { musicCacheKey, parseMusicLink } from './music.mjs';
+
+/* engine.mjs / render.mjs 只给图片视频用，音乐通道完全不加载它们：
+ *   ① 音乐 job 只依赖本文件 + music.mjs，线上万一缺引擎文件也不连累音乐
+ *   ② 不碰 Playwright 依赖，启动更快
+ * 下面三个小函数与 engine.mjs 逐字节同构，保证缓存键不变。 */
+const ENGINE_VERSION = '1.1.0';
+function extractURL(text) {
+  const m = String(text || '').match(/https?:\/\/[^\s"'<>（）()【】，。]+/g);
+  if (!m) return '';
+  return m[0].replace(/[），。、！？…．»,;!?.)]+$/g, '');
+}
+function normalizeKey(u) {
+  return String(u || '').trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split(/[?&#]/)[0]
+    .replace(/\/+$/, '');
+}
+function resultKey(u) {
+  return crypto.createHash('sha256').update(normalizeKey(u)).digest('hex').slice(0, 16);
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PARSED_DIR = path.join(ROOT, 'data', 'parsed');
@@ -80,7 +98,9 @@ async function runOne(raw) {
     const r = await parseMusicLink(raw);
     return { ...r, via: r.source || '自家代抓', platformName: r.platform === 'qishui' ? '汽水音乐' : '网易云音乐' };
   }
-  const plat = detectPlatform(raw);
+  /* 非音乐才动态加载引擎；音乐 job 不需要 engine.mjs / render.mjs */
+  const eng = await import('./engine.mjs');
+  const plat = eng.detectPlatform(raw);
   const key = plat.key;
   /* 渲染引擎平台：抖音 / 快手 / 小红书 */
   if (key === 'douyin' || key === 'kuaishou' || key === 'xiaohongshu') {
@@ -98,7 +118,7 @@ async function runOne(raw) {
     };
   }
   /* 其余平台（B站等）走原接口解析 */
-  const r = await parse(raw, { profile: false, log: () => {} });
+  const r = await eng.parse(raw, { profile: false, log: () => {} });
   return {
     kind: r.kind, images: r.images || [], play: r.play || '', cover: r.cover || '',
     title: r.title || '', via: r.via || '接口', platform: r.platform || key,
@@ -141,7 +161,7 @@ for (const raw of urls) {
     writeCache(keys, entry);
     okN++;
     const n = r.kind === 'profile' ? (r.items?.length || 0) : (r.images?.length || 1);
-    const pname = r.platformName || (detectPlatform(raw) || {}).name || '-';
+    const pname = r.platformName || '-';
     console.log(`  OK ${pname} ${r.kind} ×${n} · ${r.via || ''}` +
       (r.localAudio ? ' → ' + r.localAudio + ' (' + r.audioSize + 'B)' : ''));
     lines.push(`| OK | ${pname} | ${n} | ${r.via || ''} |`);

@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-15T05:09:26.149Z",
+  "updated": "2026-11-15T05:09:53.569Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7230,9 +7230,11 @@
       "audioMime": "audio/mp4",
       "matched": false,
       "source": "汽水官方原版音频（自家仓库同源缓存）",
+      "key": "qishui:ixkmfm6u",
+      "ts": "2026-11-15T05:09:53.563Z",
       "via": "汽水官方原版音频（自家仓库同源缓存）",
       "platformName": "汽水音乐",
-      "ts": "2026-11-15T05:09:26.149Z"
+      "engine": "1.1.0"
     },
     "netease:33894312": {
       "kind": "music",
@@ -7253,5 +7255,5 @@
       "ts": "2026-11-15T05:09:26.149Z"
     }
   },
-  "engine": "1.0.0"
+  "engine": "1.1.0"
 }

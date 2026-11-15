@@ -1,0 +1,25 @@
+{
+  "key": "netease:33894312",
+  "ok": true,
+  "data": {
+    "kind": "music",
+    "platform": "netease",
+    "id": "33894312",
+    "title": "情非得已 (童声版)",
+    "artist": "群星",
+    "album": "热门华语275",
+    "cover": "data/covers/cv_7ed8b5f29af13967.png",
+    "localAudio": "data/audio/au_7ed8b5f29af13967.mp3",
+    "audioExt": "mp3",
+    "audioSize": 4276601,
+    "audioMime": "audio/mpeg",
+    "matched": false,
+    "source": "网易云官方试听（自家仓库同源缓存）",
+    "key": "netease:33894312",
+    "ts": "2026-11-15T04:55:00.181Z",
+    "via": "网易云官方试听（自家仓库同源缓存）",
+    "platformName": "网易云音乐"
+  },
+  "engine": "1.0.0",
+  "ts": "2026-11-15T04:55:00.181Z"
+}

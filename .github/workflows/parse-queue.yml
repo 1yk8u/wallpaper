@@ -25,17 +25,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 音乐快速通道：网易云 / 汽水只需要 node 原生 fetch，不装浏览器。
-  # 普通 runner 上十几秒就能把音频字节抓进仓库，避免手机端长时间转圈。
-  music:
+  # 轻量通道：网易云 / 汽水 / X（推特）。
+  # 三者都只需 node 原生 fetch，不装浏览器，十几秒就能把字节抓进仓库。
+  # ★ 开关语义：只有下面这些域名才会触发本 job；抖音/快手/B站/小红书/其它绝不进。
+  fast:
     if: >-
       ${{
         contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', '163.com') ||
         contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'qishui') ||
-        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'music.douyin.com')
+        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'music.douyin.com') ||
+        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'twitter.com') ||
+        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'x.com/') ||
+        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'twimg.com') ||
+        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 't.co/') ||
+        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'fxtwitter.com') ||
+        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'vxtwitter.com') ||
+        contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'fixupx.com')
       }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,12 +54,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 抓取官方音频到自家仓库
+      - name: 抓取官方字节到自家仓库（音乐 / X）
         env:
           PARSE_URLS: ${{ github.event.client_payload.urls || github.event.client_payload.url || inputs.urls }}
         run: node parser/relay.mjs
 
-      - name: 提交音频与解析结果
+      - name: 提交音频 / X 媒体与解析结果
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -62,21 +70,29 @@ jobs:
             echo "没有新结果，跳过提交"
             exit 0
           fi
-          git commit -m "音乐代抓结果 $(date -u +%FT%TZ)"
+          git commit -m "轻量代抓结果 $(date -u +%FT%TZ)"
           for i in 1 2 3; do
             git pull --rebase origin main && git push origin main && break
             echo "第 $i 次推送遇到并发，重试…"
             sleep 3
           done
 
-  # 图片 / 视频通道：官方 Playwright 容器里跑真实浏览器解析（Chromium+运行库预装）
+  # 图片 / 视频通道：官方 Playwright 容器里跑真实浏览器解析。
+  # ★ 音乐与 X 已被上面的 fast job 接走，这里显式排除，绝不启动浏览器。
   parse:
     if: >-
       ${{
         !(
           contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', '163.com') ||
           contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'qishui') ||
-          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'music.douyin.com')
+          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'music.douyin.com') ||
+          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'twitter.com') ||
+          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'x.com/') ||
+          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'twimg.com') ||
+          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 't.co/') ||
+          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'fxtwitter.com') ||
+          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'vxtwitter.com') ||
+          contains(github.event.client_payload.urls || github.event.client_payload.url || inputs.urls || '', 'fixupx.com')
         )
       }}
     runs-on: ubuntu-latest

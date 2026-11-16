@@ -1,42 +1,53 @@
-name: Build wallpaper manifest
+name: 重建壁纸清单
 
+# 管理模式删图 / 手动在 wallpapers/ 增减文件后，重建 data/wallpapers.json。
 on:
+  repository_dispatch:
+    types: [rebuild-manifest]
+  workflow_dispatch:
   push:
     paths:
       - 'wallpapers/**'
       - 'thumbs/**'
-      - 'scripts/**'
-      - 'data/links.json'
-  workflow_dispatch:
 
 permissions:
   contents: write
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+concurrency:
+  group: rebuild-manifest
+  cancel-in-progress: false
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0        # git log 需要完整历史来取文件日期
+
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Build manifest
+      - name: 生成 data/wallpapers.json
         run: node scripts/build-manifest.mjs
 
-      - name: Commit manifest
+      - name: 提交清单
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "wallpaper-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add data/wallpapers.json
+          git config user.name "manifest-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data/wallpapers.json
           if git diff --cached --quiet; then
-            echo "manifest 无变化，跳过提交"
-          else
-            git commit -m "自动更新壁纸清单 [skip ci]"
-            git push
+            echo "清单没有变化，跳过提交"
+            exit 0
           fi
+          git commit -m "重建壁纸清单 $(date -u +%FT%TZ)"
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push origin main && break
+            echo "第 $i 次推送遇到并发，重试…"
+            sleep 3
+          done

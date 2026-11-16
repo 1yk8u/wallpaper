@@ -417,6 +417,13 @@ async function gh(path, opts) {
   return r.status === 204 ? null : r.json();
 }
 
+/* GitHub Contents API 的路径必须把 # ? 也转义：
+ * encodeURI() 会把 # 当成锚点原样留下，导致带 # 的文件名（本库大量如此）
+ * 在服务端被截断成前半段 → 404。这里统一补上 %23 / %3F。 */
+function encodeAPIPath(path) {
+  return encodeURI(String(path || '')).replace(/#/g, '%23').replace(/\?/g, '%3F');
+}
+
 async function ghRef() {
   const ref = await gh('/git/ref/heads/' + encodeURIComponent(CFG.branch));
   const c = await gh('/git/commits/' + ref.object.sha);
@@ -434,7 +441,7 @@ async function ghCommitTree(o) {
 }
 async function ghPathExists(path) {
   try {
-    await gh('/contents/' + encodeURI(path) + '?ref=' + encodeURIComponent(CFG.branch));
+    await gh('/contents/' + encodeAPIPath(path) + '?ref=' + encodeURIComponent(CFG.branch));
     return true;
   } catch (e) {
     if (/404/.test(String(e))) return false;
@@ -560,12 +567,12 @@ async function ghDeleteFile(path, sha) {
   /* DELETE /contents/<path> 需要 sha（先取） */
   let s = sha;
   if (!s) {
-    const cur = await gh('/contents/' + encodeURI(path) + '?ref=' + encodeURIComponent(CFG.branch));
+    const cur = await gh('/contents/' + encodeAPIPath(path) + '?ref=' + encodeURIComponent(CFG.branch));
     s = cur && cur.sha;
   }
   const body = { message: '管理模式删除 ' + path, branch: CFG.branch };
   if (s) body.sha = s;
-  return gh('/contents/' + encodeURI(path), { method: 'DELETE', body: JSON.stringify(body) });
+  return gh('/contents/' + encodeAPIPath(path), { method: 'DELETE', body: JSON.stringify(body) });
 }
 
 /* 删除一张壁纸：文件 + 可能的封面文件 */

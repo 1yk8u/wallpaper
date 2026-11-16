@@ -99,10 +99,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg>
         链接解析 · 自研
       </h2>
-      <p class="ex-hint">粘贴分享链接 → 本站自己解析：本机缓存秒出 → 自家仓库缓存 → 自家仓库代抓（GitHub Actions）。全程零第三方工具站。</p>
+      <p class="ex-hint">粘贴分享链接 → 本机缓存秒出 → 自家仓库缓存 → 自家仓库代抓。X（推特）走专用通道：只有 X 链接才启用，图片/视频/作者头像全部搬进自家仓库同源加载，零第三方地址；其它平台不受影响。</p>
 
       <div class="row paste-row">
-        <input id="ex-link" type="text" placeholder="把抖音 / 快手 / B站 / 小红书 分享链接粘到这里…" enterkeyhint="go" autocomplete="off" spellcheck="false">
+        <input id="ex-link" type="text" placeholder="把 X / 抖音 / 快手 / B站 / 小红书 分享链接粘到这里…" enterkeyhint="go" autocomplete="off" spellcheck="false">
       </div>
       <div class="row paste-row">
         <button id="ex-paste" class="btn primary big">快捷粘贴</button>
@@ -113,7 +113,7 @@
       <div id="ex-status" class="ex-status hidden"></div>
       <div id="ex-result" class="ex-result hidden"></div>
 
-      <p class="fine">解析完全由本站自研实现：浏览器直连平台 + 自家仓库中转代抓，不经过任何第三方解析工具。解析结果需手动点「存入壁纸库」才会保存。下载与版权请遵守对应平台规则，作品版权归原作者所有。</p>
+      <p class="fine">支持 X / 抖音 / 快手 / B站 / 小红书，全部由本站自研实现，不经过任何第三方解析工具站。X 用开源免费网关（FxTwitter / weserv）取元数据，图片、视频、作者头像由自家仓库代抓成同源文件，页面零第三方地址、可持续无限解析；该通道只在链接是 X 时启动，其它平台完全不触发。解析结果需手动点「存入壁纸库」才会保存。下载与版权请遵守对应平台规则，作品版权归原作者所有。</p>
     </div>
 
     <!-- ===== 自研音乐解析（纯前端，汽水 + 网易云） ===== -->
@@ -138,6 +138,11 @@
   </section>
 </main>
 
+<div id="admin-banner" class="admin-banner hidden">
+  <span>管理模式 · 点图片右上角 ✕ 删除（不可恢复）</span>
+  <button id="admin-exit" type="button">退出</button>
+</div>
+
 <footer class="foot"> 亲手收藏的壁纸 · 放在 GitHub Pages 上 · 手机电脑通用 </footer>
 
 <!-- ================= 详情弹窗 ================= -->
@@ -160,8 +165,48 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 6.5H18V11"/><path d="M18 6.5 11 13.5"/><path d="M9 7H7.5A2.5 2.5 0 0 0 5 9.5v7A2.5 2.5 0 0 0 7.5 19h7a2.5 2.5 0 0 0 2.5-2.5V15"/></svg>
         新窗口打开
       </button>
+      <button id="d-delete" class="btn ghost hidden" style="color:var(--terracotta);border-color:var(--terracotta)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/></svg>
+        删除
+      </button>
     </div>
     <p class="hint" id="d-tip"></p>
+  </div>
+</div>
+
+<!-- ================= 管理模式密码弹窗（图标连点 5 下触发） ================= -->
+<div id="modal-admin" class="modal hidden">
+  <div class="modal-card danger-card">
+    <div class="modal-head">
+      <h3>管理模式</h3>
+      <button class="icon-btn" id="admin-cancel" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+      </button>
+    </div>
+    <p class="hint">输入管理密码后可删除壁纸库里的图片，操作不可恢复。</p>
+    <input id="admin-pass" class="pass-input" type="password" inputmode="numeric" placeholder="••••••" autocomplete="off">
+    <div class="d-actions">
+      <button id="admin-ok" class="btn primary">进入管理模式</button>
+    </div>
+    <p class="hint" id="admin-msg"></p>
+  </div>
+</div>
+
+<!-- ================= 删除确认弹窗 ================= -->
+<div id="modal-del" class="modal hidden">
+  <div class="modal-card danger-card">
+    <div class="modal-head">
+      <h3>确认删除</h3>
+      <button class="icon-btn" id="del-cancel" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+      </button>
+    </div>
+    <p class="hint" id="del-msg"></p>
+    <p class="hint" style="color:var(--terracotta)">⚠️ 这会从仓库永久删除文件，无法撤销。请确认你真的要删除。</p>
+    <div class="d-actions">
+      <button id="del-ok" class="btn primary" style="background:var(--terracotta);border-color:var(--terracotta)">确认删除</button>
+      <button id="del-no" class="btn ghost">取消</button>
+    </div>
   </div>
 </div>
 
@@ -169,8 +214,8 @@
 
 
 <script src="core.js?v=20261114F"></script>
-<script src="app.js?v=20261114G"></script>
-<script src="extractor.js?v=20261114G"></script>
+<script src="app.js?v=20261116A"></script>
+<script src="extractor.js?v=20261116A"></script>
 <script src="music.js?v=20261115C"></script>
 <script src="payment.js?v=20261114C"></script>
 </body>

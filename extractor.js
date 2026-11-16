@@ -9,6 +9,7 @@
  * ===================================================================== */
 
 const PLATFORMS = {
+  x:          { name: 'X',      test: /(?:^|\.|\/)(?:x\.com|twitter\.com|fxtwitter\.com|fixupx\.com|vxtwitter\.com|twimg\.com|t\.co)(?:\/|$)/i, channel: 'x-only' },
   douyin:     { name: '抖音',   test: /douyin\.com|iesdouyin\.com|douyinapp/i },
   kuaishou:   { name: '快手',   test: /kuaishou\.com|chenzhongtech|gifshow\.com|kuaishouapp/i },
   bilibili:   { name: '哔哩哔哩', test: /bilibili\.com|b23\.tv|bilibili\.tv/i },
@@ -38,6 +39,14 @@ function parseCacheKey(u) {
     const qs = raw.match(/qishui\.douyin\.com\/(?:song|s)\/([a-z0-9]{6,20})/);
     if (qs) return 'qishui:' + qs[1];
   }
+  /* X / 推特：与 parser/xmedia.mjs 的 xCacheKey 同构，按推文 ID 归一 */
+  if (/(?:^|\.|\/)(?:x\.com|twitter\.com|fxtwitter\.com|fixupx\.com|vxtwitter\.com|twimg\.com|t\.co)(?:\/|$)/.test(raw)) {
+    const st = raw.match(/(?:status|statuses)\/(\d{5,25})/);
+    if (st) return 'x:' + st[1];
+    const md = raw.match(/(?:pbs|video)\.twimg\.com\/(?:media|amplify_video|ext_tw_video_thumb)\/([a-z0-9_-]{5,60})/);
+    if (md) return 'x:media:' + md[1].toLowerCase();
+    return 'x:' + raw.replace(/^https?:\/\//, '').split(/[?&#]/)[0].replace(/\/+$/, '');
+  }
   return raw
     .replace(/^https?:\/\//, '')
     .replace(/^www\./, '')
@@ -66,6 +75,11 @@ function memoPut(url, result) {
       title: result.title || '', cover: result.cover || '',
       images: (result.images || []).slice(0, 30),
       play: result.play || '',
+      /* X 卡片字段一并缓存，命中本机时头像/作者/推文不丢 */
+      channel: result.channel || '',
+      xAuthor: result.xAuthor || '', xHandle: result.xHandle || '',
+      xText: result.xText || '', xCreated: result.xCreated || '', xAvatar: result.xAvatar || '',
+      xPhotos: result.xPhotos || 0, xVideos: result.xVideos || 0,
       at: Date.now(),
     };
     localStorage.setItem(MEMO_KEY, JSON.stringify(m));
@@ -224,7 +238,11 @@ async function relayPoll(key, since, onTick) {
     }
     if (e) {
       const ts = Date.parse(e.ts || '') || 0;
-      if (ts >= since - 15000) return e; /* 是这次（或刚覆盖）写入的结果 */
+      if (ts >= since - 15000) {
+        /* 轻量文件是 {key, ok, data}；总缓存兜底是 entry 本身。
+         * 这里统一解包成结果对象，renderExtract 才拿得到 kind/images/play。 */
+        return (e.ok && e.data) ? e.data : e;
+      }
     }
     if (onTick) onTick(i + 1, Math.round((Date.now() - t0) / 1000));
   }
@@ -264,9 +282,21 @@ function exResultHTML(r, plat) {
       ).join('') + `</div>`;
   }
   const cnt = r.kind === 'video' ? '视频' : ((r.images || []).length + ' 张图');
+  /* X 结果：作者头像 / @账号 / 推文正文 / 专用通道标识，全部来自自家仓库同源文件 */
+  const isX = r.channel === 'x-only' || (plat && plat.channel === 'x-only');
+  const xInfo = isX ? `<div class="ex-xinfo">
+      ${r.xAvatar ? `<img class="ex-xavatar" src="${escAttr(mu(r.xAvatar))}" alt="">` : '<span class="ex-xavatar ex-xavatar-ph">𝕏</span>'}
+      <div class="ex-xmeta">
+        <div class="ex-xauthor">${esc(r.xAuthor || (r.xHandle ? '@' + r.xHandle : 'X 用户'))}${r.xHandle && r.xAuthor ? ' <span>@' + esc(r.xHandle) + '</span>' : ''}</div>
+        ${r.xText ? `<div class="ex-xtext">${esc(r.xText)}</div>` : ''}
+        ${r.xCreated ? `<div class="ex-xdate">${esc(r.xCreated)}</div>` : ''}
+      </div>
+    </div>
+    <div class="ex-xchan">𝕏 专用通道 · 只因这条 X 链接启用 · 媒体已搬进自家仓库</div>` : '';
   return `
     <div class="ex-title">${title}</div>
     <div class="hint">${esc(plat ? plat.name : '')} · ${cnt}${r.fromCache ? ' · 命中自家缓存' : ''} · 先勾选要保存的内容</div>
+    ${xInfo}
     ${body}
     <div class="ex-actions">
       <button class="btn primary" id="ex-save">存入壁纸库（${total}）</button>
@@ -461,8 +491,8 @@ async function startExtract() {
   if (!url) { toast('没找到链接', 'warn'); if (inp) inp.focus(); return; }
   const plat = detectPlatform(url);
   if (!plat) {
-    exStatus('暂不支持这个平台：目前支持 抖音 / 快手 / B站 / 小红书（音乐支持 网易云 / 汽水）', 'bad');
-    showFailHelp(url, '粘贴 抖音 / 快手 / B站 / 小红书 的分享链接即可解析。');
+    exStatus('暂不支持这个平台：目前支持 X / 抖音 / 快手 / B站 / 小红书（音乐支持 网易云 / 汽水）', 'bad');
+    showFailHelp(url, '粘贴 X / 抖音 / 快手 / B站 / 小红书 的分享链接即可解析。');
     return;
   }
 

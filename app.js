@@ -186,25 +186,42 @@ function appendGrid() {
   if (!btn.hidden) btn.textContent = '加载更多（还有 ' + (gridList.length - gridShown) + ' 个）';
 }
 
-function thumbHTML(it) {
+/* 首屏前 12 张立即加载并给最高优先级，其余懒加载 + 异步解码：
+ * 手机首屏不再等一屏图才画出来，往下滚才请求后面的，明显更快更省流量。 */
+const EAGER_FIRST = 12;
+function loadAttrs(i) {
+  return i < EAGER_FIRST
+    ? 'loading="eager" fetchpriority="high" decoding="async"'
+    : 'loading="lazy" decoding="async"';
+}
+/* 图片解码完成后加个淡入，避免加载中露出灰块闪烁 */
+const FADE_ONLOAD = ' onload="this.classList.add(\'wp-loaded\')"';
+
+function thumbHTML(it, i) {
+  i = Number(i) || 0;
+  const la = loadAttrs(i);
   const dyn = itemDyn(it);
   if (it.kind === 'audio') {
-    const cover = it.cover ? `<img loading="lazy" src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover">` : '';
+    const cover = it.cover ? `<img ${la} src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
     return `<span class="badge badge-audio">音乐</span><div class="vid-ph audio-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg></div><span class="play-tag play-tag-audio"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg>音频</span>`;
   }
   const badge = `<span class="badge">${dyn ? '动态' : '静态'}</span>`;
   if (it.kind === 'video') {
-    const cover = it.cover ? `<img loading="lazy" src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover">` : '';
+    /* 视频卡片只加载一张封面图，绝不预加载整个 mp4 */
+    const cover = it.cover ? `<img ${la} src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
     return `${badge}<div class="vid-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg></div><span class="play-tag"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4L19 12z"/></svg>视频壁纸</span>`;
   }
-  const img = `<img loading="lazy" src="${escAttr(it.thumb ? mediaOf(it.thumb) : mediaURL(it))}" data-full="${escAttr(mediaURL(it))}" onerror="if(this.src!==this.dataset.full)this.src=this.dataset.full" alt="${esc(it.title || '')}">`;
+  const img = `<img ${la} src="${escAttr(it.thumb ? mediaOf(it.thumb) : mediaURL(it))}" data-full="${escAttr(mediaURL(it))}" onerror="if(this.src!==this.dataset.full)this.src=this.dataset.full" alt="${esc(it.title || '')}"${FADE_ONLOAD}>`;
   if (it.gif) return badge + img + '<span class="play-tag">GIF</span>';
   return badge + img;
 }
 
 function cardHTML(it, i) {
-  return `<figure class="carditem" data-i="${i}">
-    <div class="thumb">${thumbHTML(it)}</div>
+  const del = isAdmin
+    ? `<button class="del-badge" data-del="${i}" title="删除这张" aria-label="删除">×</button>`
+    : '';
+  return `<figure class="carditem${isAdmin ? ' admin-mode' : ''}" data-i="${i}">
+    <div class="thumb">${del}${thumbHTML(it, i)}</div>
     <figcaption>${esc(it.title || '未命名')}</figcaption>
   </figure>`;
 }
@@ -247,6 +264,8 @@ function openDetail(it) {
     : (isIOS
       ? 'iPhone 提示：点下载保存图片；视频请在【新窗口打开】后长按 → 存储视频。'
       : '手机可长按图片/视频保存；电脑也可右键另存为。');
+  const delBtn = $id('d-delete');
+  if (delBtn) delBtn.classList.toggle('hidden', !isAdmin);
   openModal('modal-detail');
 }
 
@@ -324,6 +343,14 @@ function bindUI() {
   });
 
   $id('grid').addEventListener('click', e => {
+    const del = e.target.closest('.del-badge');
+    if (del) {
+      e.stopPropagation();
+      if (!isAdmin) return;
+      const it = allItems.filter(matchFilter)[Number(del.dataset.del)];
+      if (it && typeof window.__wpAskDelete === 'function') window.__wpAskDelete(it);
+      return;
+    }
     const fig = e.target.closest('.carditem');
     if (!fig) return;
     const it = allItems.filter(matchFilter)[Number(fig.dataset.i)];
@@ -345,6 +372,10 @@ function bindUI() {
       downloadSmart(mediaURL(curDetail), name);
     });
     $id('d-open').addEventListener('click', () => { if (curDetail) window.open(mediaURL(curDetail), '_blank', 'noopener'); });
+    const dd = $id('d-delete');
+    if (dd) dd.addEventListener('click', () => {
+      if (isAdmin && curDetail && typeof window.__wpAskDelete === 'function') window.__wpAskDelete(curDetail);
+    });
   }
 
   /* 滚到底自动续渲染；按钮保留给不想滚动的用户 */
@@ -519,6 +550,121 @@ async function commitFilesInner(config, opt) {
   return committed;
 }
 
+/* ============ 管理模式：图标连点 5 下 → 密码 → 删除壁纸 ============
+ * 删除是对仓库的真实写操作：删 wallpapers 文件 + 同步重建 data/wallpapers.json。
+ * 因 build-manifest 由仓库侧 Actions 负责，这里删完文件后再派单重建清单；
+ * 同时前端立刻从 allItems 移除并重绘，本机不留残留。 */
+let isAdmin = false;
+
+async function ghDeleteFile(path, sha) {
+  /* DELETE /contents/<path> 需要 sha（先取） */
+  let s = sha;
+  if (!s) {
+    const cur = await gh('/contents/' + encodeURI(path) + '?ref=' + encodeURIComponent(CFG.branch));
+    s = cur && cur.sha;
+  }
+  const body = { message: '管理模式删除 ' + path, branch: CFG.branch };
+  if (s) body.sha = s;
+  return gh('/contents/' + encodeURI(path), { method: 'DELETE', body: JSON.stringify(body) });
+}
+
+/* 删除一张壁纸：文件 + 可能的封面文件 */
+async function deleteWallpaper(it) {
+  if (!it) return;
+  const files = [];
+  if (it.url) files.push(String(it.url).replace(/^\/?/, ''));
+  if (it.cover) files.push(String(it.cover).replace(/^\/?/, ''));
+  const uniqFiles = [...new Set(files.filter(p => p.startsWith('wallpapers/')))];
+  for (const p of uniqFiles) await ghDeleteFile(p);
+
+  /* 从本机兜底里也删掉，避免刷新后又冒出来 */
+  try {
+    const cur = localItemsRead().filter(x => x.url !== it.url);
+    localStorage.setItem(LOCAL_ITEMS_KEY, JSON.stringify(cur));
+  } catch (e) {}
+
+  /* 前端即时移除 + 重绘（清单重建由仓库 Actions 异步完成） */
+  allItems = allItems.filter(x => x !== it && x.url !== it.url);
+  if (curDetail && curDetail.url === it.url) closeModal('modal-detail');
+  renderAll();
+  /* 派单让仓库重建清单；失败也不影响本机已删除的即时反馈 */
+  try {
+    await fetch('https://api.github.com/repos/' + encodeURIComponent(CFG.owner) + '/' + encodeURIComponent(CFG.repo) + '/dispatches', {
+      method: 'POST',
+      headers: { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + CFG.pat },
+      body: JSON.stringify({ event_type: 'rebuild-manifest', client_payload: { reason: 'admin-delete' } }),
+    });
+  } catch (e) {}
+}
+
+/* 图标连点 5 下（2 秒内）触发密码框；间隔太久自动清零 */
+let tapN = 0, tapTimer = null;
+function initAdmin() {
+  const brand = document.querySelector('.brand');
+  if (brand) {
+    brand.classList.add('admin-hit');
+    brand.addEventListener('click', () => {
+      if (isAdmin) return;
+      tapN++;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { tapN = 0; }, 2000);
+      if (tapN >= 5) {
+        tapN = 0; clearTimeout(tapTimer);
+        openModal('modal-admin');
+        const p = $id('admin-pass'); if (p) { p.value = ''; setTimeout(() => p.focus(), 50); }
+        const m = $id('admin-msg'); if (m) m.textContent = '';
+      }
+    });
+  }
+  const cancel = $id('admin-cancel');
+  if (cancel) cancel.addEventListener('click', () => closeModal('modal-admin'));
+  const ok = $id('admin-ok');
+  if (ok) ok.addEventListener('click', () => {
+    const p = $id('admin-pass');
+    if (p && p.value.trim() === '123456') {
+      isAdmin = true;
+      closeModal('modal-admin');
+      const b = $id('admin-banner'); if (b) b.classList.remove('hidden');
+      renderAll();
+      toast('已进入管理模式：点图片右上角 × 删除', 'ok');
+    } else {
+      const m = $id('admin-msg'); if (m) m.textContent = '密码不对，再试一次';
+      if (p) p.value = '';
+    }
+  });
+  const pass = $id('admin-pass');
+  if (pass) pass.addEventListener('keydown', e => { if (e.key === 'Enter' && ok) ok.click(); });
+
+  const exit = $id('admin-exit');
+  if (exit) exit.addEventListener('click', () => {
+    isAdmin = false;
+    const b = $id('admin-banner'); if (b) b.classList.add('hidden');
+    renderAll();
+    toast('已退出管理模式', 'ok');
+  });
+
+  /* 删除确认弹窗 */
+  let pending = null;
+  const dOk = $id('del-ok'), dCancel = $id('del-cancel'), dNo = $id('del-no');
+  const closeDel = () => { pending = null; closeModal('modal-del'); };
+  if (dCancel) dCancel.addEventListener('click', closeDel);
+  if (dNo) dNo.addEventListener('click', closeDel);
+  if (dOk) dOk.addEventListener('click', async () => {
+    const it = pending; closeDel();
+    if (!it) return;
+    dOk.disabled = true;
+    try { await deleteWallpaper(it); toast('已删除：' + (it.title || '壁纸'), 'ok'); }
+    catch (e) { toast('删除失败：' + (e.message || e), 'bad'); }
+    finally { dOk.disabled = false; }
+  });
+  window.__wpAskDelete = (it) => {
+    pending = it;
+    const m = $id('del-msg');
+    if (m) m.textContent = '即将删除「' + (it.title || '未命名') + '」' + (it.cover ? '（含封面）' : '') + '。';
+    openModal('modal-del');
+  };
+}
+
 /* 供解析页（extractor.js）调用的导出：配置内置，永远可用 */
 const WPGH = {
   cfg: CFG,
@@ -527,3 +673,4 @@ const WPGH = {
 };
 
 initApp();
+initAdmin();

@@ -70,7 +70,10 @@ function mergeItems(remote, local) {
 }
 /* 清单缓存：数据落 localStorage，下次打开先秒开旧清单，再后台核对更新。
  * 原实现每次都带 ?ts=Date.now() 强刷 588KB，国内网络要卡十几秒。 */
-const MANIFEST_KEY = 'wp_manifest_v1';
+const MANIFEST_KEY = 'wp_manifest_v2';
+/* ?v= 是清单版本号：缩略图上线后必须换掉旧 URL，否则 Pages 的 CDN
+ * 仍会返回没有 thumb 字段的旧清单，手机上还是加载原图。 */
+const MANIFEST_URL = 'data/wallpapers.json?v=20261117A';
 function manifestCacheRead() {
   try {
     const j = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null');
@@ -92,7 +95,7 @@ async function loadData(silent, force) {
     if (hadCache && !silent) renderAll();
   }
   /* 平时走 Pages 的 CDN 缓存；只有用户点刷新才带时间戳强制拉新 */
-  const url = 'data/wallpapers.json' + (force ? '?ts=' + Date.now() : '');
+  const url = MANIFEST_URL + (force ? '&ts=' + Date.now() : '');
   try {
     const r = await withTimeout(fetch(url, { cache: force ? 'reload' : 'force-cache' }), 20000);
     if (!r.ok) throw new Error('HTTP ' + r.status);

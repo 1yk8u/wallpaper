@@ -50,7 +50,7 @@ jobs:
         run: |
           git config user.name "manifest-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A thumbs data/wallpapers.json data/lqip.json
+          git add -A thumbs data/wallpapers.json data/lqip.json data/hero.json
           if git diff --cached --quiet; then
             echo "缩略图和清单都没有变化，跳过提交"
             exit 0

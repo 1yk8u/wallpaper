@@ -70,10 +70,10 @@ function mergeItems(remote, local) {
 }
 /* 清单缓存：数据落 localStorage，下次打开先秒开旧清单，再后台核对更新。
  * 原实现每次都带 ?ts=Date.now() 强刷 588KB，国内网络要卡十几秒。 */
-const MANIFEST_KEY = 'wp_manifest_v2';
+const MANIFEST_KEY = 'wp_manifest_v3';
 /* ?v= 是清单版本号：缩略图上线后必须换掉旧 URL，否则 Pages 的 CDN
  * 仍会返回没有 thumb 字段的旧清单，手机上还是加载原图。 */
-const MANIFEST_URL = 'data/wallpapers.json?v=20261117A';
+const MANIFEST_URL = 'data/wallpapers.json?v=20261117B';
 function manifestCacheRead() {
   try {
     const j = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null');
@@ -259,8 +259,13 @@ function cardHTML(it, i) {
   const del = isAdmin
     ? `<button class="del-badge" data-del="${i}" title="删除这张" aria-label="删除">×</button>`
     : '';
+  /* 迷你预览铺在容器底层：清单一下完立刻显示模糊图，真实缩略图加载好再淡入盖住。
+   * data URI 不含引号，直接内联安全；没有预览的条目退回原来的渐变底色。 */
+  const bg = it.lqip
+    ? ` style="background-image:url('${it.lqip}');background-size:cover;background-position:center"`
+    : '';
   return `<figure class="carditem${isAdmin ? ' admin-mode' : ''}" data-i="${i}">
-    <div class="thumb">${del}${thumbHTML(it, i)}</div>
+    <div class="thumb"${bg}>${del}${thumbHTML(it, i)}</div>
     <figcaption>${esc(it.title || '未命名')}</figcaption>
   </figure>`;
 }

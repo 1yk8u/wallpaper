@@ -57,6 +57,16 @@ const isMusicURL = u => MUSIC_RE.test(String(u || ''));
 const X_RE = /(?:^|\.|\/)(?:x\.com|twitter\.com|fxtwitter\.com|fixupx\.com|vxtwitter\.com|twimg\.com|t\.co)(?:\/|$)/i;
 const isXURL = u => X_RE.test(String(u || ''));
 
+/* 轻量平台识别（不加载引擎），只用于判断是否走免费接口 */
+function detectPlatformFast(u) {
+  const s = String(u || '').toLowerCase();
+  if (/douyin\.com|iesdouyin\.com/.test(s)) return 'douyin';
+  if (/kuaishou\.com|chenzhongtech|gifshow\.com/.test(s)) return 'kuaishou';
+  if (/bilibili\.com|b23\.tv/.test(s)) return 'bilibili';
+  if (/xiaohongshu\.com|xhslink\.com/.test(s)) return 'xiaohongshu';
+  return '';
+}
+
 /* X 模块只在真的遇到 X 链接时才加载；缓存起来避免同一批里重复 import */
 let X_MOD = null;
 async function xmod() { return X_MOD || (X_MOD = await import('./xmedia.mjs')); }
@@ -116,6 +126,19 @@ async function runOne(raw) {
     const r = await m.parseXLink(raw);
     return { ...r, platformName: 'X' };
   }
+  /* 免费聚合接口优先：抖音 / 快手 / B站 / 小红书 2~3 秒出无水印直链，
+   * 比无头浏览器渲染（几十秒 + 排队）快一个数量级。失败才回退老引擎。 */
+  const FREE_PLATS = ['douyin', 'kuaishou', 'bilibili', 'xiaohongshu'];
+  if (FREE_PLATS.includes(detectPlatformFast(raw))) {
+    try {
+      const { parseByFreeAPI } = await import('./free-api.mjs');
+      const r = await parseByFreeAPI(raw);
+      if (r) return r;
+    } catch (e) {
+      console.log('  免费接口未成功（' + String(e.message || e).slice(0, 80) + '），回退自研引擎');
+    }
+  }
+
   /* 非音乐、非 X 才动态加载引擎 */
   const eng = await import('./engine.mjs');
   const plat = eng.detectPlatform(raw);

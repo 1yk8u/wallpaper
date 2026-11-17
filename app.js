@@ -36,7 +36,8 @@ function catOf(title) {
 async function initApp() {
   if (location.protocol === 'file:') $id('file-banner').classList.remove('hidden');
   bindUI();
-  await loadData();
+  /* 清单缓存先同步渲染，网络请求在后台跑：首开不用干等 588KB 下载完 */
+  loadData(false);
   initOnboard();
 }
 
@@ -67,19 +68,48 @@ function mergeItems(remote, local) {
   });
   return out;
 }
-async function loadData(silent) {
+/* 清单缓存：数据落 localStorage，下次打开先秒开旧清单，再后台核对更新。
+ * 原实现每次都带 ?ts=Date.now() 强刷 588KB，国内网络要卡十几秒。 */
+const MANIFEST_KEY = 'wp_manifest_v1';
+function manifestCacheRead() {
   try {
-    const r = await withTimeout(fetch('data/wallpapers.json?ts=' + Date.now()), 20000);
+    const j = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null');
+    if (j && Array.isArray(j.items) && j.items.length) return j;
+  } catch (e) {}
+  return null;
+}
+function manifestCacheWrite(j) {
+  try { localStorage.setItem(MANIFEST_KEY, JSON.stringify({ updated: j.updated, items: j.items })); }
+  catch (e) { /* 超配额就只靠 CDN 缓存，不影响显示 */ }
+}
+
+async function loadData(silent, force) {
+  const cache = manifestCacheRead();
+  let hadCache = false;
+  if (cache && !force) {
+    allItems = mergeItems(cache.items, localItemsRead());
+    hadCache = allItems.length > 0;
+    if (hadCache && !silent) renderAll();
+  }
+  /* 平时走 Pages 的 CDN 缓存；只有用户点刷新才带时间戳强制拉新 */
+  const url = 'data/wallpapers.json' + (force ? '?ts=' + Date.now() : '');
+  try {
+    const r = await withTimeout(fetch(url, { cache: force ? 'reload' : 'force-cache' }), 20000);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     const list = j.items || j || [];
-    const remote = Array.isArray(list) ? list.filter(x => x && x.url) : [];
-    allItems = mergeItems(remote, localItemsRead());
-    if (!silent) renderAll();
+    const items = Array.isArray(list) ? list.filter(x => x && x.url) : [];
+    if (force || !cache || cache.updated !== j.updated) {
+      allItems = mergeItems(items, localItemsRead());
+      manifestCacheWrite({ updated: j.updated, items });
+      if (!silent || !hadCache) renderAll();
+    }
   } catch (e) {
-    allItems = mergeItems(allItems, localItemsRead());
-    if (!allItems.length) showEmpty(true);
-    if (!silent) toast('壁纸清单加载失败：' + (e.message || e), 'bad');
+    if (!allItems.length) {
+      allItems = mergeItems(allItems, localItemsRead());
+      if (!silent) showEmpty(true);
+      if (!silent) toast('壁纸清单加载失败：' + (e.message || e), 'bad');
+    }
   }
 }
 
@@ -161,7 +191,7 @@ function renderAll() {
 }
 
 /* 手机首屏只渲染 60 张：857 张一次性塞进 DOM 会明显掉帧、还拖慢解析页切换 */
-const GRID_PAGE = 60;
+const GRID_PAGE = 45;
 let gridList = [], gridShown = 0;
 function appendGrid() {
   const grid = $id('grid');
@@ -188,7 +218,7 @@ function appendGrid() {
 
 /* 首屏前 12 张立即加载并给最高优先级，其余懒加载 + 异步解码：
  * 手机首屏不再等一屏图才画出来，往下滚才请求后面的，明显更快更省流量。 */
-const EAGER_FIRST = 12;
+const EAGER_FIRST = 8;
 function loadAttrs(i) {
   return i < EAGER_FIRST
     ? 'loading="eager" fetchpriority="high" decoding="async"'
@@ -197,18 +227,24 @@ function loadAttrs(i) {
 /* 图片解码完成后加个淡入，避免加载中露出灰块闪烁 */
 const FADE_ONLOAD = ' onload="this.classList.add(\'wp-loaded\')"';
 
+/* 封面优先用压过的缩略图；没有才退回原封面 */
+function coverSrc(it) {
+  if (!it || !it.cover) return '';
+  return mediaOf(it.coverThumb || it.cover);
+}
+
 function thumbHTML(it, i) {
   i = Number(i) || 0;
   const la = loadAttrs(i);
   const dyn = itemDyn(it);
   if (it.kind === 'audio') {
-    const cover = it.cover ? `<img ${la} src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
+    const cover = it.cover ? `<img ${la} src="${escAttr(coverSrc(it))}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
     return `<span class="badge badge-audio">音乐</span><div class="vid-ph audio-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg></div><span class="play-tag play-tag-audio"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg>音频</span>`;
   }
   const badge = `<span class="badge">${dyn ? '动态' : '静态'}</span>`;
   if (it.kind === 'video') {
     /* 视频卡片只加载一张封面图，绝不预加载整个 mp4 */
-    const cover = it.cover ? `<img ${la} src="${escAttr(mediaOf(it.cover))}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
+    const cover = it.cover ? `<img ${la} src="${escAttr(coverSrc(it))}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
     return `${badge}<div class="vid-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg></div><span class="play-tag"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4L19 12z"/></svg>视频壁纸</span>`;
   }
   const img = `<img ${la} src="${escAttr(it.thumb ? mediaOf(it.thumb) : mediaURL(it))}" data-full="${escAttr(mediaURL(it))}" onerror="if(this.src!==this.dataset.full)this.src=this.dataset.full" alt="${esc(it.title || '')}"${FADE_ONLOAD}>`;
@@ -244,7 +280,7 @@ function openDetail(it) {
     m.innerHTML = `<audio controls preload="metadata" src="${escAttr(mediaURL(it))}"></audio>`;
   } else if (it.kind === 'video') {
     m.innerHTML = it.cover
-      ? `<video controls playsinline preload="metadata" poster="${escAttr(mediaOf(it.cover))}" src="${escAttr(mediaURL(it))}"></video>`
+      ? `<video controls playsinline preload="metadata" poster="${escAttr(coverSrc(it))}" src="${escAttr(mediaURL(it))}"></video>`
       : `<video controls playsinline preload="metadata" src="${escAttr(mediaURL(it))}"></video>`;
   } else {
     m.innerHTML = `<img src="${escAttr(mediaURL(it))}" alt="${esc(it.title || '')}">`;
@@ -358,7 +394,7 @@ function bindUI() {
   });
 
   const br = $id('btn-refresh');
-  if (br) br.addEventListener('click', () => { toast('刷新中…'); loadData(); });
+  if (br) br.addEventListener('click', () => { toast('刷新中…'); loadData(false, true); });
   const brl = $id('btn-reload');
   if (brl) brl.addEventListener('click', () => loadData());
 

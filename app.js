@@ -233,6 +233,8 @@ function appendGrid() {
   /* 内联 display 会盖掉 [hidden] 的 UA 样式，显式切换才靠得住 */
   btn.style.display = btn.hidden ? 'none' : 'block';
   if (!btn.hidden) btn.textContent = '加载更多（还有 ' + (gridList.length - gridShown) + ' 个）';
+  /* 新卡片插入后通知图片加速器开始择优加载 */
+  if (typeof window.__imgAccelScan === 'function') window.__imgAccelScan();
 }
 
 /* 首屏前 12 张立即加载并给最高优先级，其余懒加载 + 异步解码：
@@ -266,7 +268,12 @@ function thumbHTML(it, i) {
     const cover = it.cover ? `<img ${la} src="${escAttr(coverSrc(it))}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
     return `${badge}<div class="vid-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor" stroke="none"/></svg></div><span class="play-tag"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4L19 12z"/></svg>视频壁纸</span>`;
   }
-  const img = `<img ${la} src="${escAttr(it.thumb ? mediaOf(it.thumb) : mediaURL(it))}" data-full="${escAttr(mediaURL(it))}" onerror="if(this.src!==this.dataset.full)this.src=this.dataset.full" alt="${esc(it.title || '')}"${FADE_ONLOAD}>`;
+  /* 静态图交给自动加速模块：data-src 存路径，多通道择优 + 超时自动换线；
+   * src 先放迷你预览（若已有），清单一下完立刻有模糊图，清晰图后台加载好淡入。 */
+  const p = it.thumb ? mediaOf(it.thumb) : mediaURL(it);
+  /* 1x1 透明像素占位：没有 lqip 时不让空 src 变成请求当前页面 */
+  const preview = it.lqip || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  const img = `<img class="accel-img" ${la} src="${escAttr(preview)}" data-src="${escAttr(p)}" data-full="${escAttr(mediaURL(it))}" alt="${esc(it.title || '')}">`;
   if (it.gif) return badge + img + '<span class="play-tag">GIF</span>';
   return badge + img;
 }

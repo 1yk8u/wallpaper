@@ -86,7 +86,12 @@ const audio = isAudio(f.name);
       date: new Date(ts * 1000).toISOString(),
       src: 'file',
     };
-    if (coverFull) item.cover = 'wallpapers/' + relative(WALLPAPER_DIR, coverFull).split(sep).join('/');
+    if (coverFull) {
+      item.cover = 'wallpapers/' + relative(WALLPAPER_DIR, coverFull).split(sep).join('/');
+      const cdot = coverFull.name.lastIndexOf('.');
+      const cThumb = (cdot > 0 ? coverFull.name.slice(0, cdot) : coverFull.name) + '.webp';
+      if (existsSync(join(THUMB_DIR, cThumb))) item.coverThumb = 'thumbs/' + cThumb;
+    }
     const tbBase = (dot > 0 ? f.name.slice(0, dot) : f.name) + '.webp';
     if (existsSync(join(THUMB_DIR, tbBase))) item.thumb = 'thumbs/' + tbBase;
     items.push(item);

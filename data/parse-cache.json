@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-16T13:28:26.057Z",
+  "updated": "2026-11-17T13:26:30.165Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7277,6 +7277,17 @@
       "xFailed": [],
       "ts": "2026-11-16T13:28:26.052Z",
       "engine": "1.2.0"
+    },
+    "v.douyin.com/la9xikygtbq": {
+      "kind": "video",
+      "images": [],
+      "play": "https://sf6-cdn-tos.douyinstatic.com/obj/ies-music/7159181425541909279.mp3?is_ssr=1&temp=1",
+      "cover": "https://p-pc-weboff.byteimg.com/tos-cn-i-9r5gewecjs/c7085f453e58f78fe403594d0bab6890.png",
+      "title": "人生，如果找不到方向，那就走向自己～\n我们终此一生，就是要摆脱他人的期待，找到真正的自己。 \n在信息洪流裹挟的时代，我们总在搜索引擎里输入困惑，在他人的经验帖里",
+      "via": "渲染引擎",
+      "platform": "douyin",
+      "engine": "1.2.0",
+      "ts": "2026-11-17T13:26:30.160Z"
     }
   },
   "engine": "1.2.0"

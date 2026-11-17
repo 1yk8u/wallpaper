@@ -191,7 +191,7 @@ function renderAll() {
 }
 
 /* 手机首屏只渲染 60 张：857 张一次性塞进 DOM 会明显掉帧、还拖慢解析页切换 */
-const GRID_PAGE = 45;
+const GRID_PAGE = 24;
 let gridList = [], gridShown = 0;
 function appendGrid() {
   const grid = $id('grid');
@@ -218,7 +218,7 @@ function appendGrid() {
 
 /* 首屏前 12 张立即加载并给最高优先级，其余懒加载 + 异步解码：
  * 手机首屏不再等一屏图才画出来，往下滚才请求后面的，明显更快更省流量。 */
-const EAGER_FIRST = 8;
+const EAGER_FIRST = 4;
 function loadAttrs(i) {
   return i < EAGER_FIRST
     ? 'loading="eager" fetchpriority="high" decoding="async"'

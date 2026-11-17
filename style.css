@@ -160,7 +160,7 @@ main{padding:22px 20px 36px;max-width:1160px;margin:0 auto}
   background:linear-gradient(160deg,#e7dfca,#d8cca8);
   display:flex;align-items:center;justify-content:center;
 }
-.thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s ease}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s ease;background:linear-gradient(160deg,#e7dfca,#d8cca8)}
 .vid-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
 .thumb .vid-ph .vid-cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:0}
 .thumb .vid-ph .vid-ico{position:relative;z-index:2}
@@ -503,6 +503,9 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);transition:background-
   border:1px solid var(--line-deep);border-radius:4px;background:var(--paper);color:var(--ink);
 }
 .pass-input:focus{outline:none;border-color:var(--moss)}
+
+/* 离屏卡片跳过渲染，滚动时只画进入视口的那几张（手机掉帧明显缓解） */
+.carditem{content-visibility:auto;contain-intrinsic-size:auto 300px}
 
 /* ============ 加载提速：首屏高优先级 + 渐显 ============ */
 .thumb img[fetchpriority="high"]{background:var(--paper-3)}

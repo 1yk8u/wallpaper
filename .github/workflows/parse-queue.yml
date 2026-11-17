@@ -56,7 +56,7 @@ jobs:
 
       - name: 抓取官方字节到自家仓库（音乐 / X）
         env:
-          PARSE_URLS: ${{ github.event.client_payload.urls || github.event.client_payload.url || inputs.urls }}
+          PARSE_URLS: "${{ github.event.client_payload.urls || github.event.client_payload.url || inputs.urls }}"
         run: node parser/relay.mjs
 
       - name: 提交音频 / X 媒体与解析结果
@@ -118,8 +118,8 @@ jobs:
 
       - name: 跑自研解析引擎
         env:
-          PARSE_URLS: ${{ github.event.client_payload.urls || github.event.client_payload.url || inputs.urls }}
-          PARSE_PROFILE: ${{ (github.event.client_payload.profile || inputs.profile) && '1' || '0' }}
+          PARSE_URLS: "${{ github.event.client_payload.urls || github.event.client_payload.url || inputs.urls }}"
+          PARSE_PROFILE: "${{ (github.event.client_payload.profile || inputs.profile) && '1' || '0' }}"
           PARSE_COOKIES: ${{ secrets.PARSE_COOKIES }}
           PARSE_PROXY: ${{ secrets.PARSE_PROXY }}
           PLAYWRIGHT_BROWSERS_PATH: /ms-playwright

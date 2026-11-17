@@ -160,7 +160,8 @@ main{padding:22px 20px 36px;max-width:1160px;margin:0 auto}
   background:linear-gradient(160deg,#e7dfca,#d8cca8);
   display:flex;align-items:center;justify-content:center;
 }
-.thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s ease;background:linear-gradient(160deg,#e7dfca,#d8cca8)}
+/* 图片未加载时保持透明，露出 .thumb 底层的迷你预览；加载完成淡入盖住 */
+.thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s ease}
 .vid-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
 .thumb .vid-ph .vid-cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:0}
 .thumb .vid-ph .vid-ico{position:relative;z-index:2}

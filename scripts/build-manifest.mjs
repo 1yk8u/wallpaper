@@ -13,6 +13,11 @@ const WALLPAPER_DIR = process.cwd() + '/wallpapers';
 const DATA_DIR = process.cwd() + '/data';
 const THUMB_DIR = process.cwd() + '/thumbs';
 
+/* 迷你预览表：make-thumbs.py 生成，内联进清单让首屏秒显模糊图 */
+let LQIPS = {};
+try { LQIPS = JSON.parse(readFileSync(DATA_DIR + '/lqip.json', 'utf8')) || {}; }
+catch (e) {}
+
 const isVideo = (n) => /\.(mp4|mov|webm|m4v)$/i.test(n);
 const isGif = (n) => /\.gif$/i.test(n);
 const isImage = (n) => /\.(jpe?g|png|webp|avif)$/i.test(n);
@@ -125,6 +130,15 @@ if (existsSync(linksPath)) {
 const files = scan(WALLPAPER_DIR);
 const all = files.concat(links)
   .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+/* 只给最新的 40 张内联迷你预览：首屏滑几屏都有模糊占位，清单只增 ~15KB */
+let lqipUsed = 0;
+for (const item of all) {
+  if (lqipUsed >= 40) break;
+  if (item.lqip) { lqipUsed++; continue; }
+  const base = (item.name || '').replace(/\.[^.]+$/, '') + '.webp';
+  if (LQIPS[base]) { item.lqip = LQIPS[base]; lqipUsed++; }
+}
 
 const out = { updated: new Date().toISOString(), items: all };
 /* 不缩进：859 条清单从 ~588KB 降到 ~390KB，手机首开少下载三分之一 */

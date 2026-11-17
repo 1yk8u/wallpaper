@@ -2,12 +2,13 @@
  * payment.js —— 壁纸库付费下载系统  v2
  *
  * 档位（按用户最新要求）：
- *   免费      每天 100 张
- *   ¥0.5      体验一天（24h 内每天 200 张）
- *   ¥5        50 张（一次性额度包，永久有效）
- *   ¥10       1000 张
- *   ¥20       2000 张
- *   ¥50       5000 张
+ *   免费      每天 5 张
+ *   充会员    每天 100 张（付任意档位即成为会员，永久有效）
+ *   ¥0.5      体验会员一天（24h 内每天 100 张）
+ *   ¥5        50 张额外赠送（同时永久解锁会员每天 100 张）
+ *   ¥10       1000 张额外赠送
+ *   ¥20       2000 张额外赠送
+ *   ¥50       5000 张额外赠送
  *   自定义     ≥0.5 元，按向下匹配档位生效
  *   邀请码    zub571795 → 无限（加好友后发放）
  *
@@ -24,7 +25,8 @@
 
 const Payment = (() => {
   /* ===== 配置 ===== */
-  const FREE_DAILY_LIMIT = 100;
+  const FREE_DAILY_LIMIT = 5;          // 免费：每天 5 张
+  const MEMBER_DAILY_LIMIT = 100;      // 会员：每天 100 张
   const MIN_CUSTOM_AMOUNT = 0.5;
   const INVITE_CODES = { 'zub571795': 'unlimited' };
   const USE_NETLIFY = /netlify\.app$/i.test(location.hostname);
@@ -39,7 +41,7 @@ const Payment = (() => {
   const MAX_POLL = 170;              // 约 8.5 分钟（含 Actions 冷启动 + 二维码 5 分钟）
 
   const TIERS = [
-    { id: 'trial', price: 0.5, kind: 'trial', daily: 200, hours: 24, title: '体验一天', desc: '24h 内每天 200 张' },
+    { id: 'trial', price: 0.5, kind: 'trial', daily: 100, hours: 24, title: '体验会员一天', desc: '24h 每天 100 张' },
     { id: 'p5',    price: 5,   kind: 'credits', credits: 50,   title: '50 张',   desc: '永久有效 · 用完为止' },
     { id: 'p10',   price: 10,  kind: 'credits', credits: 1000, title: '1000 张', desc: '永久有效 · 用完为止' },
     { id: 'p20',   price: 20,  kind: 'credits', credits: 2000, title: '2000 张', desc: '永久有效 · 用完为止' },
@@ -92,12 +94,18 @@ const Payment = (() => {
   function isUnlimited() {
     return !!getInviteState().unlimited;
   }
+  /* 会员 = 体验期内，或买过任意付费档位（额度包即永久会员） */
+  function isMember() {
+    if (isTrialActive()) return true;
+    const lvl = getPaymentState().level;
+    return !!lvl && lvl !== 'free' && lvl !== 'trial';
+  }
 
   /* ===== 额度 ===== */
   function getDailyLimit() {
     if (isUnlimited()) return Infinity;
-    if (isTrialActive()) return TIERS[0].daily;
-    return FREE_DAILY_LIMIT;
+    if (isMember()) return MEMBER_DAILY_LIMIT;   // 会员 100 张/天
+    return FREE_DAILY_LIMIT;                       // 免费 5 张/天
   }
   function getDailyRemaining() {
     const limit = getDailyLimit();
@@ -250,8 +258,10 @@ const Payment = (() => {
     if (isUnlimited()) {
       statusHtml = '<div class="pay-status unlimited">无限下载（邀请码 / 已解锁）</div>';
     } else {
-      statusHtml = '<div class="pay-status">今日剩余 <strong>' + (lim === Infinity ? '∞' : Math.max(0, lim - getQuotaState().used)) + '</strong> / ' + lim + ' 张'
-        + (pack.credits > 0 ? ' ｜ 套餐余量 <strong>' + pack.credits + '</strong> 张' : '')
+      const who = isMember() ? '会员' : '免费用户';
+      statusHtml = '<div class="pay-status">' + who + ' · 今日剩余 <strong>' + Math.max(0, lim - getQuotaState().used) + '</strong> / ' + lim + ' 张'
+        + (pack.credits > 0 ? ' ｜ 赠送余量 <strong>' + pack.credits + '</strong> 张' : '')
+        + (isMember() ? '' : ' ｜ <b>充会员每天 100 张</b>')
         + '</div>';
     }
 
@@ -617,9 +627,9 @@ const Payment = (() => {
   return {
     canDownload, consumeDownload, getRemaining, getDailyLimit, getQuotaState,
     showPaymentModal, activatePayment, getPaymentState,
-    redeemInviteCode, getInviteState,
+    redeemInviteCode, getInviteState, isMember,
     updateQuotaDisplay, injectPaymentStyles,
-    TIERS, FREE_DAILY_LIMIT, MIN_CUSTOM_AMOUNT,
+    TIERS, FREE_DAILY_LIMIT, MEMBER_DAILY_LIMIT, MIN_CUSTOM_AMOUNT,
   };
 })();
 

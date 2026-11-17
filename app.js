@@ -70,10 +70,11 @@ function mergeItems(remote, local) {
 }
 /* 清单缓存：数据落 localStorage，下次打开先秒开旧清单，再后台核对更新。
  * 原实现每次都带 ?ts=Date.now() 强刷 588KB，国内网络要卡十几秒。 */
-const MANIFEST_KEY = 'wp_manifest_v3';
-/* ?v= 是清单版本号：缩略图上线后必须换掉旧 URL，否则 Pages 的 CDN
- * 仍会返回没有 thumb 字段的旧清单，手机上还是加载原图。 */
-const MANIFEST_URL = 'data/wallpapers.json?v=20261117B';
+const MANIFEST_KEY = 'wp_manifest_v4';
+/* ?v= 是清单版本号：内容结构变了必须换号，否则 Pages 的 CDN
+ * 仍会返回旧清单（比如没有 thumb / lqip 字段），手机上就享受不到提速。 */
+const HERO_URL = 'data/hero.json?v=20261117C';
+const MANIFEST_URL = 'data/wallpapers.json?v=20261117C';
 function manifestCacheRead() {
   try {
     const j = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null');
@@ -93,6 +94,21 @@ async function loadData(silent, force) {
     allItems = mergeItems(cache.items, localItemsRead());
     hadCache = allItems.length > 0;
     if (hadCache && !silent) renderAll();
+  }
+  /* 新客人无缓存：先拉约 6KB 的首屏小清单把前 12 张画出来，
+   * 再后台拉完整清单无缝替换。首屏不用干等整份清单下载。 */
+  if (!hadCache && !force) {
+    try {
+      const hr = await withTimeout(fetch(HERO_URL), 15000);
+      if (hr.ok) {
+        const hj = await hr.json();
+        const hero = Array.isArray(hj.items) ? hj.items.filter(x => x && x.url) : [];
+        if (hero.length && !allItems.length) {
+          allItems = mergeItems(hero, localItemsRead());
+          if (!silent) renderAll();
+        }
+      }
+    } catch (e) { /* 小清单失败就等完整清单，不影响最终显示 */ }
   }
   /* 平时走 Pages 的 CDN 缓存；只有用户点刷新才带时间戳强制拉新 */
   const url = MANIFEST_URL + (force ? '&ts=' + Date.now() : '');

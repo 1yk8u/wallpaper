@@ -127,5 +127,6 @@ const all = files.concat(links)
   .sort((a, b) => new Date(b.date) - new Date(a.date));
 
 const out = { updated: new Date().toISOString(), items: all };
-writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out, null, 2), 'utf8');
+/* 不缩进：859 条清单从 ~588KB 降到 ~390KB，手机首开少下载三分之一 */
+writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out), 'utf8');
 console.log(`manifest: ${files.length} 文件 + ${links.length} 直链 = ${all.length} 条`);

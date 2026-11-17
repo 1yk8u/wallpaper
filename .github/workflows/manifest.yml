@@ -3,7 +3,7 @@ name: 重建壁纸清单
 # 管理模式删图 / 手动在 wallpapers/ 增减文件后，重建 data/wallpapers.json。
 on:
   repository_dispatch:
-    types: [rebuild-manifest]
+    types: [rebuild-manifest, build-thumbs]
   workflow_dispatch:
   push:
     paths:
@@ -20,12 +20,22 @@ concurrency:
 jobs:
   rebuild:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0        # git log 需要完整历史来取文件日期
+
+      # 先把原图压成 WebP 缩略图，再重建清单把 thumb 路径写进每条记录。
+      # 已生成的会跳过，只有新图才真正处理。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 生成 WebP 缩略图
+        run: |
+          python -m pip install --quiet pillow
+          python scripts/make-thumbs.py
 
       - uses: actions/setup-node@v4
         with:
@@ -34,18 +44,18 @@ jobs:
       - name: 生成 data/wallpapers.json
         run: node scripts/build-manifest.mjs
 
-      - name: 提交清单
+      - name: 提交缩略图与清单
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "manifest-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A data/wallpapers.json
+          git add -A thumbs data/wallpapers.json
           if git diff --cached --quiet; then
-            echo "清单没有变化，跳过提交"
+            echo "缩略图和清单都没有变化，跳过提交"
             exit 0
           fi
-          git commit -m "重建壁纸清单 $(date -u +%FT%TZ)"
+          git commit -m "生成缩略图并重建壁纸清单 $(date -u +%FT%TZ)"
           for i in 1 2 3; do
             git pull --rebase origin main && git push origin main && break
             echo "第 $i 次推送遇到并发，重试…"

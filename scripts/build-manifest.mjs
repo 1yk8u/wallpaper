@@ -143,4 +143,12 @@ for (const item of all) {
 const out = { updated: new Date().toISOString(), items: all };
 /* 不缩进：859 条清单从 ~588KB 降到 ~390KB，手机首开少下载三分之一 */
 writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out), 'utf8');
+
+/* 首屏小清单：只放最新 12 张（含迷你预览），约 6KB。
+ * 前端先拉它把首屏画出来（~1 秒），完整清单后台慢慢下再无缝替换。 */
+const hero = all.slice(0, 12);
+writeFileSync(join(DATA_DIR, 'hero.json'),
+  JSON.stringify({ updated: out.updated, items: hero }), 'utf8');
+console.log(`hero: ${hero.length} 张首屏图`);
+
 console.log(`manifest: ${files.length} 文件 + ${links.length} 直链 = ${all.length} 条`);

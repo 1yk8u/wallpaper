@@ -146,9 +146,19 @@ writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out), 'utf8');
 
 /* 首屏小清单：只放最新 12 张（含迷你预览），约 6KB。
  * 前端先拉它把首屏画出来（~1 秒），完整清单后台慢慢下再无缝替换。 */
-const hero = all.slice(0, 12);
+import { readFileSync as readBin } from 'node:fs';
+const hero = all.slice(0, 6);
+/* 首屏 6 张直接把缩略图 base64 内联：清单一到就是清晰图，零图片请求。
+ * 单张 WebP ~10-17KB，6 张约 80KB，首屏清单总共 ~90KB，一次拿全。 */
+for (const item of hero) {
+  if (!item.thumb) continue;
+  try {
+    const buf = readBin(join(process.cwd(), item.thumb));
+    item.inline = 'data:image/webp;base64,' + buf.toString('base64');
+  } catch (e) {}
+}
 writeFileSync(join(DATA_DIR, 'hero.json'),
   JSON.stringify({ updated: out.updated, items: hero }), 'utf8');
-console.log(`hero: ${hero.length} 张首屏图`);
+console.log(`hero: ${hero.length} 张首屏图（${hero.filter(x=>x.inline).length} 张内联清晰图）`);
 
 console.log(`manifest: ${files.length} 文件 + ${links.length} 直链 = ${all.length} 条`);

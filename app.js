@@ -87,6 +87,14 @@ function manifestCacheWrite(j) {
   catch (e) { /* 超配额就只靠 CDN 缓存，不影响显示 */ }
 }
 
+/* 用首屏小清单里的内联图覆盖同 URL 的 item：本地旧缓存/完整清单
+ * 可能没有 inline 字段，覆盖后首屏 6 张始终零网络请求秒出。 */
+function applyHeroInline(list, hero) {
+  if (!hero || !hero.length) return list;
+  const byUrl = new Map(hero.map(x => [x.url, x]));
+  return list.map(x => byUrl.has(x.url) ? Object.assign({}, x, byUrl.get(x.url)) : x);
+}
+
 async function loadData(silent, force) {
   const cache = manifestCacheRead();
   let hadCache = false;
@@ -95,16 +103,18 @@ async function loadData(silent, force) {
     hadCache = allItems.length > 0;
     if (hadCache && !silent) renderAll();
   }
-  /* 新客人无缓存：先拉约 6KB 的首屏小清单把前 12 张画出来，
-   * 再后台拉完整清单无缝替换。首屏不用干等整份清单下载。 */
-  if (!hadCache && !force) {
+  /* 首屏小清单带 base64 内联清晰图：无论有无缓存都拉，
+   * 清单一到首屏 6 张立刻显示，不用等任何图片网络请求。 */
+  let heroItems = [];
+  if (!force) {
     try {
-      const hr = await withTimeout(fetch(HERO_URL), 15000);
+      const hr = await withTimeout(fetch(HERO_URL, { cache: 'force-cache' }), 15000);
       if (hr.ok) {
         const hj = await hr.json();
-        const hero = Array.isArray(hj.items) ? hj.items.filter(x => x && x.url) : [];
-        if (hero.length && !allItems.length) {
-          allItems = mergeItems(hero, localItemsRead());
+        heroItems = Array.isArray(hj.items) ? hj.items.filter(x => x && x.url) : [];
+        if (heroItems.length) {
+          allItems = applyHeroInline(allItems, heroItems);
+          if (!allItems.length) allItems = mergeItems(heroItems, localItemsRead());
           if (!silent) renderAll();
         }
       }
@@ -121,14 +131,16 @@ async function loadData(silent, force) {
     if (force || !cache || cache.updated !== j.updated) {
       allItems = mergeItems(items, localItemsRead());
       manifestCacheWrite({ updated: j.updated, items });
-      if (!silent || !hadCache) renderAll();
     }
+    allItems = applyHeroInline(allItems, heroItems);
+    if (!silent || !hadCache) renderAll();
   } catch (e) {
+    allItems = applyHeroInline(allItems, heroItems);
     if (!allItems.length) {
       allItems = mergeItems(allItems, localItemsRead());
       if (!silent) showEmpty(true);
       if (!silent) toast('壁纸清单加载失败：' + (e.message || e), 'bad');
-    }
+    } else if (!silent) renderAll();
   }
 }
 

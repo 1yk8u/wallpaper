@@ -6,6 +6,11 @@
 <title>壁纸库 · Wallpaper Hub</title>
 <meta name="description" content="在线壁纸库：静态壁纸、动态壁纸下载，支持抖音/快手/哔哩哔哩/小红书链接解析、网易云/汽水音乐分享链接解析与快手主页批量搬运">
 <meta name="theme-color" content="#e9e2cf">
+<!-- 引擎加速①：提前建立各图片通道的连接，省掉几十~几百 ms 握手 -->
+<link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<!-- 引擎加速②：HTML 一解析就开始下首屏小清单 -->
+<link rel="preload" href="data/hero.json?v=20261117C" as="fetch" crossorigin>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css?v=20261117B">

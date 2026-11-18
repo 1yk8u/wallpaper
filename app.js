@@ -271,7 +271,11 @@ function thumbHTML(it, i) {
   /* 静态图交给自动加速模块：data-src 存路径，多通道择优 + 超时自动换线；
    * src 先放迷你预览（若已有），清单一下完立刻有模糊图，清晰图后台加载好淡入。 */
   const p = it.thumb ? mediaOf(it.thumb) : mediaURL(it);
-  /* 1x1 透明像素占位：没有 lqip 时不让空 src 变成请求当前页面 */
+  /* 首屏内联图：清单一到就是清晰图，零图片请求（真正的秒显） */
+  if (it.inline) {
+    return `<img class="wp-loaded" ${la} src="${escAttr(it.inline)}" data-full="${escAttr(mediaURL(it))}" alt="${esc(it.title || '')}">`;
+  }
+  /* 其余图片交给自动加速模块：多通道择优 + 超时换线；lqip 做占位 */
   const preview = it.lqip || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   const img = `<img class="accel-img" ${la} src="${escAttr(preview)}" data-src="${escAttr(p)}" data-full="${escAttr(mediaURL(it))}" alt="${esc(it.title || '')}">`;
   if (it.gif) return badge + img + '<span class="play-tag">GIF</span>';

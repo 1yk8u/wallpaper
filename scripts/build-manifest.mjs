@@ -140,23 +140,22 @@ for (const item of all) {
   if (LQIPS[base]) { item.lqip = LQIPS[base]; lqipUsed++; }
 }
 
-const out = { updated: new Date().toISOString(), items: all };
-/* 不缩进：859 条清单从 ~588KB 降到 ~390KB，手机首开少下载三分之一 */
-writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out), 'utf8');
-
-/* 首屏小清单：只放最新 12 张（含迷你预览），约 6KB。
- * 前端先拉它把首屏画出来（~1 秒），完整清单后台慢慢下再无缝替换。 */
-import { readFileSync as readBin } from 'node:fs';
+/* 首屏 6 张把缩略图 base64 内联：清单一到就是清晰图，零图片请求。
+ * 单张 WebP ~10-22KB，6 张约 120KB。两个清单都带 inline，
+ * 否则完整清单后台替换首屏时会把内联图覆盖掉，首屏又变慢。 */
 const hero = all.slice(0, 6);
-/* 首屏 6 张直接把缩略图 base64 内联：清单一到就是清晰图，零图片请求。
- * 单张 WebP ~10-17KB，6 张约 80KB，首屏清单总共 ~90KB，一次拿全。 */
 for (const item of hero) {
   if (!item.thumb) continue;
   try {
-    const buf = readBin(join(process.cwd(), item.thumb));
+    const buf = readFileSync(join(process.cwd(), item.thumb));
     item.inline = 'data:image/webp;base64,' + buf.toString('base64');
   } catch (e) {}
 }
+
+const out = { updated: new Date().toISOString(), items: all };
+/* 不缩进：859 条清单从 ~588KB 降到 ~390KB，手机首开少下载三分之一 */
+writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out), 'utf8');
+/* 首屏小清单约 120KB：前端先拉它把首屏画出来，完整清单后台慢慢下再无缝替换。 */
 writeFileSync(join(DATA_DIR, 'hero.json'),
   JSON.stringify({ updated: out.updated, items: hero }), 'utf8');
 console.log(`hero: ${hero.length} 张首屏图（${hero.filter(x=>x.inline).length} 张内联清晰图）`);

@@ -1,9 +1,9 @@
 # 支付订单自动到账 worker（GitHub Pages 站点的"服务端"）
 # 触发：前端下单时 repository_dispatch 立即触发 / 每 5 分钟兜底 / 手动
 # 密钥：仓库 Settings → Secrets and variables → Actions
-#   YMQ_APP_ID      云免签后台「系统设置」里的应用ID
-#   YMQ_APP_SECRET  云免签后台「系统设置」里的 app_secret
-#   YMQ_NOTIFY_URL  可选，云端回调地址（不填则靠低频辅助查询识别到账）
+#   XORPAY_AID       XorPay 后台「商户信息」里的 appid（形如一串字母数字）
+#   XORPAY_SECRET    XorPay 后台的 app secret
+#   XORPAY_NOTIFY_URL（可选，Variables 里填）回调地址；不填也能靠低频查询识别到账
 name: 支付订单自动到账
 
 on:
@@ -31,7 +31,7 @@ jobs:
       - name: 处理订单
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          YMQ_APP_ID: ${{ secrets.YMQ_APP_ID }}
-          YMQ_APP_SECRET: ${{ secrets.YMQ_APP_SECRET }}
-          YMQ_NOTIFY_URL: ${{ vars.YMQ_NOTIFY_URL }}
+          XORPAY_AID: ${{ secrets.XORPAY_AID }}
+          XORPAY_SECRET: ${{ secrets.XORPAY_SECRET }}
+          XORPAY_NOTIFY_URL: ${{ vars.XORPAY_NOTIFY_URL }}
         run: node scripts/pay-worker.mjs

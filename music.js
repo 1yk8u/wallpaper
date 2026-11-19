@@ -207,6 +207,8 @@ const Music = (() => {
       if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');
       if (sv) sv.disabled = false;
+      /* 后台预热到本地 blob，点播真正零等待 */
+      warmAudio(s, row);
     } else if (media) {
       media.innerHTML = '<span class="mu-noaudio">暂无可下载音频 · 点「打开原曲」收听</span>';
     }
@@ -255,6 +257,23 @@ const Music = (() => {
     if (s.blob) return s.blob;
     try { const r = await fetch(u); if (r.ok) return await r.blob(); } catch (e) {}
     return null;
+  }
+
+  /* 后台预热：解析拿到同源路径后，用 CDN 秒下整首（~4s）转成本地 blob。
+   * 就绪且用户还没点播放时，把 <audio> 从 CDN src 无缝切到 blob URL——
+   * 之后点播是纯内存播放，零缓冲、点开即响。存库也会复用这份 blob，不再重复下载。
+   * 若用户已在播放则不切，避免打断（此时 CDN 已缓冲一段，照常能听）。 */
+  function warmAudio(s, row) {
+    if (!LOCAL_AUDIO_RE.test(normLocal(s.localAudio))) return;
+    ensureBlob(s).then(u => {
+      if (!u) return;
+      const au = row && row.querySelector('.mu-media audio');
+      const buf = row && row.querySelector('.mu-media [data-buf]');
+      if (buf) buf.style.display = 'none';
+      if (au && !au.dataset.fallback && au.paused && (au.currentTime || 0) === 0) {
+        try { au.src = u; au.load(); } catch (e) {}
+      }
+    }).catch(() => {});
   }
 
   function download(s, btn) {
@@ -358,6 +377,8 @@ const Music = (() => {
         au.src = s.localAudio; au.load();
       });
     }
+    /* card 若在缓存命中时已带 localAudio，这里也要预热（applyMeta 未重建 media 的情况） */
+    if (s.localAudio && au) warmAudio(s, row);
   }
 
   function renderInto(container, songs, note) {

@@ -200,6 +200,14 @@ const Payment = (() => {
 .pay-title{text-align:center;margin:0 0 14px;font-size:21px}
 .pay-status{text-align:center;padding:10px 14px;border-radius:12px;margin-bottom:18px;font-size:13px;background:#f0f7ff;color:#1d4ed8}
 .pay-status.unlimited{background:#f0fdf4;color:#15803d}
+.pay-why{margin-bottom:16px;border:1px solid #fde68a;background:#fffbeb;border-radius:12px;padding:10px 14px;font-size:12px;color:#92400e;line-height:1.75;text-align:left}
+.pay-why summary{cursor:pointer;font-weight:800;font-size:13px;color:#b45309;list-style:none;outline:none;user-select:none}
+.pay-why summary::-webkit-details-marker{display:none}
+.pay-why summary::before{content:'▸ ';display:inline-block;transition:transform .2s}
+.pay-why[open] summary::before{transform:rotate(90deg)}
+.pay-why-body{margin-top:8px;color:#78350f}
+.pay-why-body b{color:#b91c1c}
+.pay-why-end{margin-top:7px;padding-top:7px;border-top:1px dashed #fcd34d;color:#92400e}
 .pay-tiers{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:16px}
 .pay-tier{border:2px solid #e5e7eb;border-radius:12px;padding:10px 4px;text-align:center;cursor:pointer;transition:.16s}
 .pay-tier:hover{border-color:#93c5fd;transform:translateY(-2px)}
@@ -278,6 +286,17 @@ const Payment = (() => {
     <button class="pay-close" id="pay-close">&times;</button>
     <h2 class="pay-title">解锁更多下载</h2>
     ${statusHtml}
+    <details class="pay-why" open>
+      <summary>为什么要收一点点费用？请看说明</summary>
+      <div class="pay-why-body">
+        这个壁纸站和解析工具一直免费开放，但背后的开销都是作者一个人在扛，每天都在真实花钱：
+        <br>· 服务器 + 域名：<b>每天约 15 元</b>
+        <br>· 图片存储 + CDN 流量：<b>每天约 10 元</b>
+        <br>· 视频解析接口 + 备用线路：<b>每天约 8 元</b>
+        <br>合计 <b>每天 30 多元、一个月近 1000 元</b>，还没算作者熬夜开发和维护的时间。
+        <div class="pay-why-end">你的每一次小额支持，都能让这个站多撑一天。<b>体谅一下作者</b>，非常感谢！</div>
+      </div>
+    </details>
     <div class="pay-tiers" id="pay-tiers">${tierHtml}</div>
     <div class="pay-custom">
       <span>自定义 ¥</span>

@@ -187,19 +187,19 @@ const Music = (() => {
       const playSrc = cdnURL(s.localAudio) || s.localAudio;
       media.innerHTML = `<span class="mu-buf" data-buf>读取音源…</span>` +
         `<audio controls preload="metadata" src="${esc(playSrc)}"></audio>` +
-        (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
-        '<span class="mu-local">自家仓库文件 · CDN 加速 · 点开即播</span>';
+        (s.matched ? '<span class="mu-match">※ 已配同名版本</span>' : '') +
+        '<span class="mu-local">本站存档 · 点开即播</span>';
       const btn = row.querySelector('.mu-btn-dl');
       if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');
       if (sv) sv.disabled = false;
-      /* 统一绑定播放器（拦截点播 + 后台预热），点下即响 */
+      /* 统一绑定播放器（原生手势播放 + 后台预热），点下即响 */
       attachPlayer(s, row);
     } else if (media) {
-      media.innerHTML = '<span class="mu-noaudio">暂无可下载音频 · 点「打开原曲」收听</span>';
+      media.innerHTML = '<span class="mu-noaudio">音源整理中 · 可先点「打开原曲」</span>';
     }
     const note = row.querySelector('.mu-enrich');
-    if (note) note.textContent = s.source || '同源音频已就绪，可直接播放 / 下载';
+    if (note) note.textContent = s.source ? String(s.source).replace(/（[^）]*）/g, '') : '音源已就绪';
   }
 
   /* ===== 只在「存到壁纸库」时才取整首字节 =====

@@ -229,10 +229,13 @@ async function relayDispatch(url, key) {
 }
 async function relayPoll(key, since, onTick) {
   const t0 = Date.now();
-  for (let i = 0; i < 30; i++) {           /* 每轮约 5 秒，上限约 2 分钟 */
-    await sleep(3000);
+  /* 快通道通常 20~30 秒出结果。前 20 轮每轮 1 秒密集轮询，
+   * 结果一落库立刻发现（旧版固定 sleep 3 秒，白等 2 秒）。
+   * 慢通道兜底：之后放慢到 3 秒，总时长仍覆盖约 2 分钟。 */
+  for (let i = 0; i < 60; i++) {
+    await sleep(i < 20 ? 1000 : 3000);
     let e = await lightResultGet(key, 12000, since);  /* 只读单条小文件，按 ts 取最新 */
-    if (!e && i % 5 === 4) {              /* 三通道全不通时，偶尔刷一次总缓存兜底 */
+    if (!e && i % 10 === 9) {             /* 三通道全不通时，偶尔刷一次总缓存兜底 */
       const entries = await loadCache(true, 15000);
       e = (entries && entries[key]) || null;
     }

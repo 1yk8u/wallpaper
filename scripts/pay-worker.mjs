@@ -121,10 +121,13 @@ async function writeStatusIfNeeded() {
     const j = await gh('GET', '/contents/' + encodeURI('data/pay/status.json') + '?ref=' + BRANCH + '&t=' + Date.now());
     cur = { data: JSON.parse(unb64(j.content)), sha: j.sha };
   } catch (e) {}
-  if (cur && cur.data.configured === configured && Date.now() - Date.parse(cur.data.updatedAt || '') < 6 * 3600 * 1000) return;
+  const GATEWAY = 'xorpay';
+  /* 配置状态或网关类型变了就立即写；否则 6 小时内不重复提交 */
+  if (cur && cur.data.configured === configured && cur.data.gateway === GATEWAY
+      && Date.now() - Date.parse(cur.data.updatedAt || '') < 6 * 3600 * 1000) return;
   const body = {
     message: 'pay: gateway status',
-    content: b64(JSON.stringify({ configured, gateway: 'xorpay', updatedAt: new Date().toISOString() })),
+    content: b64(JSON.stringify({ configured, gateway: GATEWAY, updatedAt: new Date().toISOString() })),
     branch: BRANCH,
   };
   if (cur) body.sha = cur.sha;

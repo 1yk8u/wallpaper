@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-19T13:52:24.888Z",
+  "updated": "2026-11-19T13:59:52.047Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7313,6 +7313,19 @@
       "platform": "douyin",
       "engine": "1.2.0",
       "ts": "2026-11-19T13:52:24.883Z"
+    },
+    "v.douyin.com/sbf_rfgv1dm": {
+      "kind": "image",
+      "images": [
+        "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813c000-ce/ok4qCveAE9nFNCHAjwIIVuqA98hzDEArAfqQon~tplv-dy-aweme-images:q75.webp?lk3s=138a59ce&x-expires=1797685200&x-signature=HVcwCpBOzSeJGRDXox5Lj1ph5Io%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=image&biz_tag=aweme_images&l=202611192159518C90ACCD0A7E8ECE58D5"
+      ],
+      "play": "",
+      "cover": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813c000-ce/ok4qCveAE9nFNCHAjwIIVuqA98hzDEArAfqQon~noop.jpeg?lk3s=138a59ce&x-expires=1796302800&x-signature=mJEyuQ%2FPve2Pl480%2FQdKWhdpEPk%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&biz_tag=pcweb_cover&l=202611192159518C90ACCD0A7E8ECE58D5",
+      "title": "海的味道，我知道🤪 #海边 #沙滩拍照 #love海滩 #浪漫沙滩女孩 #沙滩",
+      "via": "免费聚合接口",
+      "platform": "douyin",
+      "engine": "1.2.0",
+      "ts": "2026-11-19T13:59:52.042Z"
     }
   },
   "engine": "1.2.0"

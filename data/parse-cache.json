@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-19T13:17:48.296Z",
+  "updated": "2026-11-19T13:52:24.888Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7302,6 +7302,17 @@
       "platform": "douyin",
       "engine": "1.2.0",
       "ts": "2026-11-17T13:50:34.172Z"
+    },
+    "v.douyin.com/0k4uolo9zaa": {
+      "kind": "video",
+      "images": [],
+      "play": "https://v3-kefu.douyinvod.com/5df57b2659e4503f675fdf18571849d0/6aff0d4b/video/tos/cn/tos-cn-ve-15c000-ce/ocw2yfQff9MU9e43DYPLkdAgM8A0XTAEYFArQR/?a=6920&ch=0&cr=0&dr=0&er=0&cd=0%7C0%7C0%7C0&cv=1&br=3522&bt=3522&cs=0&ds=4&ft=3GIeWxTxxouhL.D1PD12lMgxpIuobLeU5yRU_4DQUseSNv7TGW&mime_type=video_mp4&qs=0&rc=OjxpOzMzOzQ2PDZoNTw2PEBpMzR5cng5cnM7ZTMzbGkzNEBeMC5jL2JiX18xYzY2LjBjYSMzYGw1MmRjMHNhLS1kLWJzcw%3D%3D&btag=c0000e00018000&dy_q=1795096344&feature_id=37f92ebd2877ae8e7eba995d406c5150&l=202611192152248D1C5A55C1E778ECD983",
+      "cover": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813c000-ce/owBmswIg8AAF2EogHC7djffxAMDSJEAQhAzV9e~tplv-dy-360p.jpeg?lk3s=138a59ce&x-expires=1796302800&x-signature=xZRiwVxteotgJUYmNflIgNUhTUI%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=origin_cover&biz_tag=pcweb_cover&l=202611192152242A98E1E51638AD04A231",
+      "title": "去年来找祖师公借钱母，感谢祖师公保佑，今年来还愿🙏#闽南 #三平寺",
+      "via": "免费聚合接口",
+      "platform": "douyin",
+      "engine": "1.2.0",
+      "ts": "2026-11-19T13:52:24.883Z"
     }
   },
   "engine": "1.2.0"

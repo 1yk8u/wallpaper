@@ -349,21 +349,20 @@ const Music = (() => {
       return;
     }
     const old = btn.textContent;
-    btn.disabled = true; btn.textContent = '获取中…';
-    const blob = await grabAudio(s);
-    if (!blob) {
+    btn.disabled = true; btn.textContent = '提交中…';
+    if (!s.localAudio || !LOCAL_AUDIO_RE.test(normLocal(s.localAudio))) {
       btn.textContent = '音频没取到';
       setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3000);
       return;
     }
-    btn.textContent = '提交中…';
     try {
       const name = '音乐_' + safeName(s);
       const title = ((s.title || '').trim() + (s.artist && !/官方|打开原曲/.test(s.artist) ? ' - ' + s.artist : '')).trim() || '音乐';
+      /* 音频已在仓库 data/audio/ 里，走 srcPath 零字节引用（拿 sha 直接进 tree），
+       * 不再下载整首→base64→上传 5MB。存库从 ~11s 降到 ~5s。 */
       const committed = await WPGH.importEntries([{
         name,
-        bytes: new Uint8Array(await blob.arrayBuffer()),
-        size: blob.size,
+        srcPath: normLocal(s.localAudio),
         itemExtra: { title, cat: '音乐', kind: 'audio', gif: false },
       }], { onStatus: (i, text) => { btn.textContent = text.slice(0, 8); } });
       try { committed.forEach(it => allItems.unshift(it)); renderAll(); } catch (e) {}

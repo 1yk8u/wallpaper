@@ -566,6 +566,18 @@ async function commitFilesInner(config, opt) {
   const big = list.find(f => (f.size || 0) > 60 * 1024 * 1024);
   if (big) throw new Error('存在超过 60MB 的文件，请改用 GitHub 网页端上传');
 
+  /* ⓪ 快速通道：源文件已在仓库里（如音乐 data/audio/au_xxx.mp3），
+   *    只需拿它的 blob sha 即可零字节引用，省掉「下载整首→base64→上传 5MB」这一步。
+   *    与下面的文件名避让并行预取，防止串行叠加延迟。 */
+  const srcMetaP = list.map(f => {
+    if (!f.srcPath) return null;
+    const p = String(f.srcPath).replace(/^\/+/, '');
+    const pr = gh('/contents/' + encodeAPIPath(p) + '?ref=' + encodeURIComponent(CFG.branch))
+      .then(m => ({ sha: (m && m.sha) || '', size: (m && m.size) || 0 }))
+      .catch(() => ({ sha: '', size: 0 }));
+    return pr;
+  });
+
   /* ① 文件名避让：批次内重名（长标题被截断时最易触发）+ 仓库已存在同名，
    *    一律追加 -2/-3…，保证每个 path 唯一，绝不互相覆盖成只有 1 个文件。 */
   const prepared = [], used = new Set();
@@ -587,15 +599,21 @@ async function commitFilesInner(config, opt) {
     prepared.push(name);
   }
 
-  /* ② 逐个上传 blob（封面一并备好） */
+  /* ② 逐个上传 blob（封面一并备好）；srcPath 已存在的文件直接引用 sha，零字节 */
   const blobs = [], covers = [];
   for (let i = 0; i < total; i++) {
     const f = list[i];
-    onStatus(i, '上传中(' + (i + 1) + '/' + total + ')…', 'busy');
-    let bytes;
-    if (f.bytes) bytes = f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes);
-    else bytes = new Uint8Array(await f.arrayBuffer());
-    blobs.push({ sha: await ghCreateBlob(bytes), size: bytes.byteLength });
+    onStatus(i, (srcMetaP[i] ? '引用中(' : '上传中(') + (i + 1) + '/' + total + ')…', 'busy');
+    if (srcMetaP[i]) {
+      const meta = await srcMetaP[i];
+      if (!meta.sha) throw new Error('仓库里找不到源文件：' + f.srcPath);
+      blobs.push({ sha: meta.sha, size: meta.size || f.size || 0 });   // 零字节引用，不上传
+    } else {
+      let bytes;
+      if (f.bytes) bytes = f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes);
+      else bytes = new Uint8Array(await f.arrayBuffer());
+      blobs.push({ sha: await ghCreateBlob(bytes), size: bytes.byteLength });
+    }
     if (f.coverName && f.coverBytes) {
       const cb = f.coverBytes instanceof Uint8Array ? f.coverBytes : new Uint8Array(f.coverBytes);
       covers[i] = { name: f.coverName, sha: await ghCreateBlob(cb) };

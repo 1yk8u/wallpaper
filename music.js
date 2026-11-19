@@ -189,26 +189,12 @@ const Music = (() => {
         `<audio controls preload="metadata" src="${esc(playSrc)}"></audio>` +
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
         '<span class="mu-local">自家仓库文件 · CDN 加速 · 点开即播</span>';
-      const au = media.querySelector('audio');
-      const buf = media.querySelector('[data-buf]');
-      if (au && buf) {
-        const ready = () => { buf.style.display = 'none'; };
-        au.addEventListener('canplay', ready);
-        au.addEventListener('loadedmetadata', ready);
-        au.addEventListener('playing', ready);
-        au.addEventListener('error', () => {
-          /* CDN 万一失败，回退同源相对路径 */
-          if (au.dataset.fallback) return;
-          au.dataset.fallback = '1';
-          au.src = s.localAudio; au.load();
-        });
-      }
       const btn = row.querySelector('.mu-btn-dl');
       if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');
       if (sv) sv.disabled = false;
-      /* 后台预热到本地 blob，点播真正零等待 */
-      warmAudio(s, row);
+      /* 统一绑定播放器（拦截点播 + 后台预热），点下即响 */
+      attachPlayer(s, row);
     } else if (media) {
       media.innerHTML = '<span class="mu-noaudio">暂无可下载音频 · 点「打开原曲」收听</span>';
     }
@@ -259,10 +245,10 @@ const Music = (() => {
     return null;
   }
 
-  /* 后台预热：解析拿到同源路径后，用 CDN 秒下整首（~4s）转成本地 blob。
-   * 就绪且用户还没点播放时，把 <audio> 从 CDN src 无缝切到 blob URL——
-   * 之后点播是纯内存播放，零缓冲、点开即响。存库也会复用这份 blob，不再重复下载。
-   * 若用户已在播放则不切，避免打断（此时 CDN 已缓冲一段，照常能听）。 */
+  /* blob 就绪后无条件把 <audio> 切到内存 src —— 不再要求「用户没点过播放」。
+   * 旧 bug：一旦用户点了播放（au.paused=false），即使 blob 已下载好也不切，
+   * 于是永远卡在 CDN 流式缓冲上，表现为「点一下要等很久才响」。
+   * 现在切换时保留播放进度与播放/暂停状态，用户正在听也不会被打断。 */
   function warmAudio(s, row) {
     if (!LOCAL_AUDIO_RE.test(normLocal(s.localAudio))) return;
     ensureBlob(s).then(u => {
@@ -270,10 +256,69 @@ const Music = (() => {
       const au = row && row.querySelector('.mu-media audio');
       const buf = row && row.querySelector('.mu-media [data-buf]');
       if (buf) buf.style.display = 'none';
-      if (au && !au.dataset.fallback && au.paused && (au.currentTime || 0) === 0) {
-        try { au.src = u; au.load(); } catch (e) {}
-      }
+      if (!au || au.dataset.onblob === '1' || au.dataset.waiting === '1') return;
+      if (au.dataset.fallback) return;   /* 已回退同源，保持同源播放 */
+      const t = au.currentTime || 0;
+      const wasPlaying = !au.paused;
+      au.dataset.onblob = '1';
+      try {
+        au.src = u; au.load();
+        if (t > 0) au.addEventListener('loadedmetadata', () => { try { au.currentTime = t; } catch (_) {} }, { once: true });
+        if (wasPlaying) au.play().catch(() => {});
+      } catch (e) {}
     }).catch(() => {});
+  }
+
+  /* 统一绑定播放器：拦截「点播放但 blob 还没好」的情况 —— 绝不让 <audio>
+   * 直接走 CDN 流式缓冲（国内忽快忽慢，正是「点一下等半天」的根源），而是
+   * 显示「加载中」并等整首下到内存后，从 blob 零缓冲播放。blob 在卡片渲染时
+   * 就已后台预热，多数情况下点播时已就绪，点下即响。 */
+  function attachPlayer(s, row) {
+    if (!row || !s.localAudio) return;
+    const au = row.querySelector('.mu-media audio');
+    const buf = row.querySelector('.mu-media [data-buf]');
+    if (!au || au.dataset.bound === '1') return;
+    au.dataset.bound = '1';
+    const hideBuf = () => { if (buf) buf.style.display = 'none'; };
+    const showBuf = txt => { if (buf) { buf.textContent = txt; buf.style.display = ''; } };
+
+    au.addEventListener('play', () => {
+      if (au.dataset.onblob === '1') return;   /* 已是内存播放，正常放行 */
+      if (au.dataset.waiting === '1') return;  /* 已在等待队列 */
+      au.dataset.waiting = '1';
+      s._wantPlay = true;
+      try { au.pause(); } catch (e) {}          /* 阻止 CDN 流式缓冲 */
+      if (!s.blobUrl) showBuf('音频加载中，马上就好…');
+      ensureBlob(s).then(u => {
+        au.dataset.waiting = '0';
+        if (!u) {                                /* 下载失败：回退 CDN，能听但要等 */
+          s._wantPlay = false;
+          showBuf('网络较慢，缓冲中…');
+          au.dataset.giveup = '1';
+          try { au.play(); } catch (e) {}
+          return;
+        }
+        const t = au.currentTime || 0;
+        au.dataset.onblob = '1';
+        try {
+          au.src = u; au.load();
+          if (t > 0) au.addEventListener('loadedmetadata', () => { try { au.currentTime = t; } catch (_) {} }, { once: true });
+        } catch (e) {}
+        hideBuf();
+        if (s._wantPlay) { s._wantPlay = false; try { au.play(); } catch (e) {} }
+      }).catch(() => { au.dataset.waiting = '0'; });
+    });
+
+    au.addEventListener('canplay', hideBuf);
+    au.addEventListener('loadedmetadata', hideBuf);
+    au.addEventListener('playing', () => { s._wantPlay = false; hideBuf(); });
+    au.addEventListener('error', () => {
+      if (au.dataset.fallback) return;
+      au.dataset.fallback = '1';
+      au.src = s.localAudio; au.load();
+    });
+
+    warmAudio(s, row);   /* 一渲染就后台预热，争取用户点之前就切好 blob */
   }
 
   function download(s, btn) {
@@ -363,22 +408,9 @@ const Music = (() => {
     if (sv) sv.onclick = () => saveToLibrary(s, sv);
     const op = row.querySelector('.mu-btn-open');
     if (op) op.onclick = () => window.open(s.page || NE_HOME, '_blank', 'noopener');
-    /* 缓冲提示：CDN 首段就绪即隐藏；CDN 失败回退同源 */
-    const au = row.querySelector('.mu-media audio');
-    const buf = row.querySelector('.mu-media [data-buf]');
-    if (au && buf) {
-      const ready = () => { buf.style.display = 'none'; };
-      au.addEventListener('canplay', ready);
-      au.addEventListener('loadedmetadata', ready);
-      au.addEventListener('playing', ready);
-      au.addEventListener('error', () => {
-        if (au.dataset.fallback) return;
-        au.dataset.fallback = '1';
-        au.src = s.localAudio; au.load();
-      });
-    }
-    /* card 若在缓存命中时已带 localAudio，这里也要预热（applyMeta 未重建 media 的情况） */
-    if (s.localAudio && au) warmAudio(s, row);
+    /* 统一绑定播放器（拦截点播 + 后台预热）。card 若已带 localAudio 会在此预热；
+     * applyMeta 重建 media 后再绑定时，靠 audio.dataset.bound 防止重复绑定。 */
+    attachPlayer(s, row);
   }
 
   function renderInto(container, songs, note) {

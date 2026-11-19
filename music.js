@@ -185,7 +185,7 @@ const Music = (() => {
        * 直接用同源 <audio src> 点播会「很久才有声音」。改走 jsdelivr CDN（同一份文件，
        * ~900KB/s），preload=metadata 让浏览器后台先把 moov 头/首段拉好，点播即响。 */
       const playSrc = cdnURL(s.localAudio) || s.localAudio;
-      media.innerHTML = `<span class="mu-buf" data-buf>缓冲中…</span>` +
+      media.innerHTML = `<span class="mu-buf" data-buf>读取音源…</span>` +
         `<audio controls preload="metadata" src="${esc(playSrc)}"></audio>` +
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
         '<span class="mu-local">自家仓库文件 · CDN 加速 · 点开即播</span>';
@@ -222,8 +222,10 @@ const Music = (() => {
           if (u) { s.blob = blob; s.blobUrl = URL.createObjectURL(blob); resolve(s.blobUrl); }
           else resolve('');
         };
+        /* 不用 AbortSignal.timeout()——旧版 iOS Safari 没有这个构造器，直接抛错会让整条链卡死。
+         * 靠上面的 finish 幂等 + 总超时即可，fetch 自己失败会走 catch。 */
         urls.forEach(src => {
-          fetch(src, { signal: AbortSignal.timeout(45000) }).then(async r => {
+          fetch(src).then(async r => {
             if (!r.ok) return;
             const b = await r.blob();
             if (b && b.size >= 20000 && !/text\/html|application\/json/i.test(b.type || '')) finish(src, b);
@@ -245,34 +247,31 @@ const Music = (() => {
     return null;
   }
 
-  /* blob 就绪后无条件把 <audio> 切到内存 src —— 不再要求「用户没点过播放」。
-   * 旧 bug：一旦用户点了播放（au.paused=false），即使 blob 已下载好也不切，
-   * 于是永远卡在 CDN 流式缓冲上，表现为「点一下要等很久才响」。
-   * 现在切换时保留播放进度与播放/暂停状态，用户正在听也不会被打断。 */
+  /* 后台预热：把整首歌下到内存 blob。就绪后「仅在用户还没开始播」时把 <audio>
+   * 的 src 换成 blob，这样之后点播是纯内存、点下即响。
+   * 关键纪律：绝不在用户播放后切 src、绝不 pause、绝不异步调用 play()。
+   * iOS Safari 只认用户手势同步栈里的播放，任何事后 play() 都会被拒绝——
+   * 上一版正是「点播放→pause→等 blob→异步 play()」，结果点了没声音。 */
   function warmAudio(s, row) {
     if (!LOCAL_AUDIO_RE.test(normLocal(s.localAudio))) return;
     ensureBlob(s).then(u => {
       if (!u) return;
       const au = row && row.querySelector('.mu-media audio');
-      const buf = row && row.querySelector('.mu-media [data-buf]');
-      if (buf) buf.style.display = 'none';
-      if (!au || au.dataset.onblob === '1' || au.dataset.waiting === '1') return;
-      if (au.dataset.fallback) return;   /* 已回退同源，保持同源播放 */
-      const t = au.currentTime || 0;
-      const wasPlaying = !au.paused;
+      if (!au || au.dataset.onblob === '1') return;
+      if (au.dataset.fallback) return;   /* 已回退同源，别再动 */
+      /* 只有用户完全没碰过播放（暂停且在开头）才无缝换 src；正在听就绝不打断 */
+      if (!au.paused || (au.currentTime || 0) > 0) return;
       au.dataset.onblob = '1';
-      try {
-        au.src = u; au.load();
-        if (t > 0) au.addEventListener('loadedmetadata', () => { try { au.currentTime = t; } catch (_) {} }, { once: true });
-        if (wasPlaying) au.play().catch(() => {});
-      } catch (e) {}
+      try { au.src = u; au.load(); } catch (e) {}
     }).catch(() => {});
   }
 
-  /* 统一绑定播放器：拦截「点播放但 blob 还没好」的情况 —— 绝不让 <audio>
-   * 直接走 CDN 流式缓冲（国内忽快忽慢，正是「点一下等半天」的根源），而是
-   * 显示「加载中」并等整首下到内存后，从 blob 零缓冲播放。blob 在卡片渲染时
-   * 就已后台预热，多数情况下点播时已就绪，点下即响。 */
+  /* 播放器绑定：保持原生 <audio> 的行为——用户点播放由浏览器在自己的手势栈里
+   * 处理，一定能响（CDN 流式，首段缓冲约 1 秒级）。我们只做三件事：
+   *   ① 后台预热 blob（就绪且用户未播时换 src，下次点播秒响）
+   *   ② 缓冲提示：canplay/playing 时隐藏
+   *   ③ CDN 失败回退同源相对路径
+   * 绝不拦截 play、pause 或事后 play()，否则 iOS 直接静音。 */
   function attachPlayer(s, row) {
     if (!row || !s.localAudio) return;
     const au = row.querySelector('.mu-media audio');
@@ -280,45 +279,17 @@ const Music = (() => {
     if (!au || au.dataset.bound === '1') return;
     au.dataset.bound = '1';
     const hideBuf = () => { if (buf) buf.style.display = 'none'; };
-    const showBuf = txt => { if (buf) { buf.textContent = txt; buf.style.display = ''; } };
-
-    au.addEventListener('play', () => {
-      if (au.dataset.onblob === '1') return;   /* 已是内存播放，正常放行 */
-      if (au.dataset.waiting === '1') return;  /* 已在等待队列 */
-      au.dataset.waiting = '1';
-      s._wantPlay = true;
-      try { au.pause(); } catch (e) {}          /* 阻止 CDN 流式缓冲 */
-      if (!s.blobUrl) showBuf('音频加载中，马上就好…');
-      ensureBlob(s).then(u => {
-        au.dataset.waiting = '0';
-        if (!u) {                                /* 下载失败：回退 CDN，能听但要等 */
-          s._wantPlay = false;
-          showBuf('网络较慢，缓冲中…');
-          au.dataset.giveup = '1';
-          try { au.play(); } catch (e) {}
-          return;
-        }
-        const t = au.currentTime || 0;
-        au.dataset.onblob = '1';
-        try {
-          au.src = u; au.load();
-          if (t > 0) au.addEventListener('loadedmetadata', () => { try { au.currentTime = t; } catch (_) {} }, { once: true });
-        } catch (e) {}
-        hideBuf();
-        if (s._wantPlay) { s._wantPlay = false; try { au.play(); } catch (e) {} }
-      }).catch(() => { au.dataset.waiting = '0'; });
-    });
 
     au.addEventListener('canplay', hideBuf);
     au.addEventListener('loadedmetadata', hideBuf);
-    au.addEventListener('playing', () => { s._wantPlay = false; hideBuf(); });
+    au.addEventListener('playing', hideBuf);
     au.addEventListener('error', () => {
       if (au.dataset.fallback) return;
       au.dataset.fallback = '1';
       au.src = s.localAudio; au.load();
     });
 
-    warmAudio(s, row);   /* 一渲染就后台预热，争取用户点之前就切好 blob */
+    warmAudio(s, row);   /* 一渲染就后台预热，争取用户点之前就换好 blob */
   }
 
   function download(s, btn) {
@@ -376,25 +347,26 @@ const Music = (() => {
     }
   }
 
-  /* ===== 卡片：平台彩色图标 + 音符图标 + 同源封面 ===== */
-  function card(s) {
+  /* ===== 唱片登记卡：方角、纸底、衬线、细线，平台色只留一道书脊 ===== */
+  function card(s, n) {
+    const no = String(n || 1).padStart(2, '0');
     const media = s.localAudio
-      ? `<span class="mu-buf" data-buf>缓冲中…</span>` +
+      ? `<span class="mu-buf" data-buf>读取音源…</span>` +
         `<audio controls preload="metadata" src="${esc(cdnURL(s.localAudio) || s.localAudio)}"></audio>` +
-        (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
-        '<span class="mu-local">自家仓库文件 · CDN 加速 · 点开即播</span>'
-      : '<span class="mu-noaudio">等自家仓库备音频… · 可先点「打开原曲」</span>';
+        (s.matched ? '<span class="mu-match">※ 已配同名版本</span>' : '') +
+        '<span class="mu-local">本站存档 · 点开即播</span>'
+      : '<span class="mu-noaudio">音源整理中，可先点「打开原曲」</span>';
     return `<div class="mu-item" style="--mc:${s.color}">
       <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg()}</span></div>
       <div class="mu-info">
         <div class="mu-title"><span class="mu-note-sm">${svg()}</span>${esc(s.title)}</div>
-        <div class="mu-artist">${esc(s.artist || ' ')}</div>
+        <div class="mu-artist">No.${no} &nbsp;·&nbsp; ${esc(s.artist || '佚名')}</div>
         <div class="mu-media">${media}</div>
         <div class="mu-enrich"></div>
       </div>
       <div class="mu-actions">
-        <button type="button" class="mu-btn-dl">下载音乐</button>
-        <button type="button" class="mu-btn-save">存到壁纸库</button>
+        <button type="button" class="mu-btn-dl">下载</button>
+        <button type="button" class="mu-btn-save">存壁纸库</button>
         <button type="button" class="mu-btn-open">打开原曲</button>
       </div>
     </div>`;
@@ -417,17 +389,14 @@ const Music = (() => {
     if (!box) return;
     box.classList.remove('hidden');
     box.innerHTML =
-      `<div class="mu-head"><span class="mu-head-t">解析结果</span><span class="mu-head-sub">${esc(note || (songs.length + ' 首'))}</span></div>` +
-      '<div class="mu-list">' + songs.map(sc => {
+      `<div class="mu-head"><span class="mu-head-t">解析结果</span><span class="mu-head-sub">${esc(note || (songs.length + ' 首 · 唱片目录'))}</span></div>` +
+      '<div class="mu-list">' + songs.map((sc, i) => {
         const p = PLATS.find(x => x.key === sc.platform) || PLATS[0];
-        return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(sc)}</div>`;
+        return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 22)}<b>${esc(p.name)}</b><span style="margin-left:auto;color:var(--dim)">${String(i + 1).padStart(2, '0')} / ${String(songs.length).padStart(2, '0')}</span></div>${card(sc, i + 1)}</div>`;
       }).join('') + '</div>' +
-      '<div class="mu-foot">本地毫秒级出卡片；歌名 / 歌手 / 封面 / 官方音频由自家仓库代抓后存进仓库，' +
-      '汽水优先官方原版（M4A），网易云为官方试听（MP3）。页面不出现任何第三方音频源，' +
-      '音频是自家仓库文件、经 CDN 加速分发（点开即播，不用等整首下完）。' +
-      '首次解析约半分钟，之后秒出。' +
-      '点【下载音乐】按原格式保存，点【存到壁纸库】永久进「壁纸 → 音乐」。' +
-      '版权归原平台及权利人，仅个人试听收藏。</div>';
+      '<div class="mu-foot">卡片本地即出；歌名、歌手、封面与音频由本站自行抓取存档，页面不含任何第三方音源。' +
+      '首次解析约半分钟，之后即取即用。「下载」按原格式保存，「存壁纸库」收进「壁纸 → 音乐」。' +
+      '版权归原平台及权利人，仅作个人试听收藏。</div>';
     box.querySelectorAll('.mu-row').forEach((row, i) => bindCard(row, songs[i]));
     return box;
   }
@@ -475,7 +444,7 @@ const Music = (() => {
       if (e && e.kind === 'music' && !e.err) cacheOK++;
       if (good(e)) {
         try {
-          const r = await fetch(e.localAudio, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
+          const r = await fetch(e.localAudio, { method: 'HEAD' });
           if (r.ok) localOK++;
         } catch (err) {}
       }
@@ -499,52 +468,56 @@ const Music = (() => {
     const st = document.createElement('style');
     st.id = 'music-styles';
     st.textContent = `
-.mu-plats{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 14px}
-.mu-plat{display:inline-flex;align-items:center;gap:6px;border:1px solid #e6eaf1;background:#fff;border-radius:999px;padding:6px 12px 6px 6px;font-size:12px;font-weight:600;color:#4b5563;cursor:pointer;transition:.15s}
-.mu-plat:hover{border-color:var(--mc);color:var(--mc);transform:translateY(-1px)}
-.mu-plat .mu-brand{--ms:24px}
-.mu-brand{display:inline-flex;align-items:center;justify-content:center;width:var(--ms,22px);height:var(--ms,22px);border-radius:8px;background:var(--mc);color:#fff;flex:none;position:relative;overflow:hidden}
+/* 音乐解析 —— 唱片目录卡 / 标本登记册。纸底、细线、衬线、留白，无渐变无药丸。 */
+.mu-plats{display:flex;flex-wrap:wrap;gap:7px;margin:6px 0 2px}
+.mu-plat{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-deep);background:transparent;border-radius:2px;padding:6px 11px 6px 7px;font-family:var(--serif);font-size:12.5px;font-weight:700;color:var(--ink-2);cursor:pointer;letter-spacing:.04em;transition:none}
+.mu-plat:hover{border-color:var(--moss);color:var(--moss-deep);background:var(--moss-paper)}
+.mu-plat .mu-brand{--ms:20px}
+.mu-brand{display:inline-flex;align-items:center;justify-content:center;width:var(--ms,20px);height:var(--ms,20px);border-radius:1px;background:var(--mc);color:#fff;flex:none;position:relative;overflow:hidden}
 .mu-brand svg{position:absolute;inset:0;width:100%;height:100%}
-.mu-brand svg:first-child{width:76%;height:76%;margin:auto;z-index:1}
-.mu-head{display:flex;align-items:center;gap:10px;margin:14px 0 10px}
-.mu-head-t{font-size:15px;font-weight:800;color:#1f2937}
-.mu-head-sub{font-size:11px;color:#8a94a6;margin-left:auto}
-.mu-testline{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-.mu-test{font-size:11px;font-weight:700;border-radius:999px;padding:4px 9px;background:#f1f4f9;color:#5b6472}
-.mu-test.ok{background:#f0fdf4;color:#15803d}
-.mu-test.bad{background:#fef2f2;color:#b91c1c}
-.mu-list{display:flex;flex-direction:column;gap:10px}
-.mu-row{background:#f8fafd;border:1px solid #e9edf4;border-radius:14px;padding:10px}
-.mu-row-hd{display:flex;align-items:center;gap:6px;font-size:12px;color:#4b5563;margin-bottom:8px}
-.mu-item{display:flex;gap:12px;align-items:center;background:#fff;border:1px solid #e8ecf3;border-radius:12px;padding:10px}
-.mu-cover{width:62px;height:62px;border-radius:10px;flex:none;position:relative;overflow:hidden;background:linear-gradient(135deg,#a5b4fc,#f0abfc);display:flex;align-items:center;justify-content:center;color:#fff}
+.mu-brand svg:first-child{width:74%;height:74%;margin:auto;z-index:1}
+.mu-head{display:flex;align-items:baseline;gap:12px;margin:16px 0 12px;border-bottom:2px solid var(--ink);padding-bottom:6px}
+.mu-head-t{font-family:var(--serif);font-size:17px;font-weight:900;color:var(--ink);letter-spacing:.08em}
+.mu-head-sub{font-size:11px;color:var(--dim);margin-left:auto;font-family:var(--serif);letter-spacing:.1em}
+.mu-testline{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}
+.mu-test{font-size:11px;border:1px solid var(--line);background:var(--paper-2);color:var(--ink-2);padding:3px 8px;border-radius:1px;font-family:var(--serif)}
+.mu-test.ok{border-color:var(--moss);color:var(--moss-deep);background:var(--moss-paper)}
+.mu-test.bad{border-color:var(--terracotta);color:var(--terracotta)}
+.mu-list{display:flex;flex-direction:column;gap:14px}
+.mu-row{background:transparent;border-left:3px solid var(--mc);padding:2px 0 2px 14px}
+.mu-row-hd{display:flex;align-items:center;gap:7px;font-family:var(--serif);font-size:12.5px;color:var(--ink-2);margin-bottom:9px;letter-spacing:.05em}
+.mu-row-hd b{font-weight:900;color:var(--ink)}
+.mu-item{display:flex;gap:14px;align-items:flex-start;background:var(--paper);border:1px solid var(--line);border-radius:2px;padding:14px}
+.mu-cover{width:70px;height:70px;border-radius:1px;flex:none;position:relative;overflow:hidden;background:var(--paper-3);border:1px solid var(--line-deep);display:flex;align-items:center;justify-content:center;color:var(--moss-deep)}
+.mu-cover::after{content:"";position:absolute;inset:4px;border:1px dotted var(--line-deep);pointer-events:none}
 .mu-cover img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
 .mu-cover.has-img .mu-note{display:none}
-.mu-note{width:28px;height:28px;position:relative;z-index:1}
+.mu-note{width:30px;height:30px;position:relative;z-index:1}
 .mu-note svg{width:100%;height:100%}
 .mu-info{flex:1;min-width:0}
-.mu-title{display:flex;align-items:center;gap:5px;font-size:14px;font-weight:700;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mu-title{display:flex;align-items:center;gap:6px;font-family:var(--serif);font-size:16px;font-weight:900;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.03em}
 .mu-note-sm{width:14px;height:14px;flex:none;color:var(--mc)}
 .mu-note-sm svg{width:100%;height:100%}
-.mu-artist{font-size:11px;color:#8a94a6;margin:3px 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mu-media{min-height:32px}
-.mu-item audio{width:100%;height:32px;display:block}
-.mu-noaudio{font-size:11px;color:#98a1b0;background:#f5f7fb;border-radius:7px;padding:4px 8px;display:inline-block}
-.mu-pending{font-size:11px;color:#0369a1;background:#f0f9ff;border-radius:7px;padding:4px 8px;display:inline-block}
-.mu-match{display:inline-block;margin-top:4px;font-size:10px;color:#b45309;background:#fffbeb;border-radius:6px;padding:2px 6px}
-.mu-local{display:inline-block;margin-top:4px;margin-left:5px;font-size:10px;color:#0f766e;background:#f0fdfa;border-radius:6px;padding:2px 6px}
-.mu-buf{display:inline-block;font-size:10.5px;color:#0369a1;background:#f0f9ff;border-radius:6px;padding:2px 7px;margin-bottom:3px}
-.mu-enrich{font-size:10.5px;color:#98a1b0;margin-top:3px;min-height:14px}
-.mu-actions{display:grid;grid-template-columns:1fr;gap:5px;flex:none;width:118px}
-.mu-actions button{border:none;border-radius:9px;padding:7px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
-.mu-btn-dl{background:var(--mc);color:#fff}
-.mu-btn-save{background:#fff7ed;color:#c2410c}
-.mu-btn-open{background:#f1f4f9;color:#5b6472}
+.mu-artist{font-size:11.5px;color:var(--dim);margin:4px 0 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.06em}
+.mu-media{min-height:32px;border-top:1px dotted var(--line-deep);padding-top:9px}
+.mu-item audio{width:100%;height:34px;display:block}
+.mu-noaudio{font-size:11px;color:var(--dim);display:inline-block;padding:2px 0}
+.mu-pending{font-size:11px;color:var(--moss-deep);display:inline-block;padding:2px 0}
+.mu-match{display:inline-block;margin-top:5px;font-size:10.5px;color:var(--honey);font-family:var(--serif)}
+.mu-local{display:inline-block;margin-top:5px;margin-left:10px;font-size:10.5px;color:var(--moss-deep);font-family:var(--serif)}
+.mu-buf{display:inline-block;font-size:11px;color:var(--moss-deep);margin-bottom:3px;font-family:var(--serif);letter-spacing:.06em}
+.mu-buf::before{content:"· ";color:var(--terracotta)}
+.mu-enrich{font-size:10.5px;color:var(--dim);margin-top:6px;min-height:14px;letter-spacing:.03em}
+.mu-actions{display:flex;flex-direction:column;gap:6px;flex:none;width:104px}
+.mu-actions button{border:1px solid var(--line-deep);border-radius:1px;background:var(--paper);padding:7px 5px;font-family:var(--serif);font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;color:var(--ink-2);letter-spacing:.05em}
+.mu-actions button:hover{background:var(--paper-3)}
+.mu-btn-dl{color:var(--moss-deep)!important;border-color:var(--moss)!important}
+.mu-btn-save{color:var(--terracotta)!important;border-color:var(--terracotta)!important}
 .mu-actions button:disabled{opacity:.4;cursor:not-allowed}
-.mu-foot{font-size:11px;color:#9aa3b2;margin-top:10px;line-height:1.6}
-.mu-err{background:#fef2f2;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:12px}
+.mu-foot{font-family:var(--serif);font-size:11px;color:var(--dim);margin-top:16px;line-height:1.8;border-top:1px dotted var(--line-deep);padding-top:10px;letter-spacing:.02em}
+.mu-err{border:1px solid var(--terracotta);color:var(--terracotta);background:var(--paper);border-radius:1px;padding:12px 14px;font-family:var(--serif);font-size:12.5px}
 .hidden{display:none!important}
-@media(max-width:520px){.mu-item{gap:8px;padding:8px}.mu-cover{width:52px;height:52px}.mu-actions{width:104px}.mu-actions button{padding:6px 4px;font-size:10.5px}}
+@media(max-width:520px){.mu-item{gap:10px;padding:11px;flex-wrap:wrap}.mu-cover{width:58px;height:58px}.mu-actions{width:100%;flex-direction:row}.mu-actions button{flex:1;padding:8px 3px;font-size:11px}.mu-title{font-size:15px}}
 `;
     document.head.appendChild(st);
   }
@@ -582,6 +555,12 @@ const Music = (() => {
     }
     const test = $('mu-test');
     if (test) test.addEventListener('click', () => selftest('mu-result'));
+    const clear = $('mu-clear');
+    if (clear) clear.addEventListener('click', () => {
+      if (inp) { inp.value = ''; inp.focus(); }
+      const box = $('mu-result');
+      if (box) { box.innerHTML = ''; box.classList.add('hidden'); }
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

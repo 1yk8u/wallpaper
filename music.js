@@ -27,6 +27,18 @@ const Music = (() => {
   const NE_HOME = 'https://music.163.com';
   /* 唯一允许被 fetch 的音频路径：自家仓库的相对路径，http(s) 一律拒绝 */
   const LOCAL_AUDIO_RE = /^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i;
+  /* 自家仓库音频的 CDN 加速域名：同一份文件，jsdelivr 在国内实测 ~900KB/s，
+   * 而 GitHub Pages 仅 ~13KB/s（4MB 要下 5 分钟）。这不是第三方音频源——
+   * 文件仍在自家仓库，只是借 CDN 边缘节点分发，字节与同源完全一致。 */
+  const AUDIO_CDN = 'https://cdn.jsdelivr.net/gh/1yk8u/wallpaper@main/';
+  /* 相对音频路径 → 加速 URL；只接受 LOCAL_AUDIO_RE，杜绝任何外部直链。
+   * 返回 absolute URL 供 <audio src> / fetch 使用。 */
+  function normLocal(local) { return String(local || '').replace(/^\/+/, ''); }
+  function cdnURL(local) {
+    const p = normLocal(local);
+    if (!LOCAL_AUDIO_RE.test(p)) return '';
+    return AUDIO_CDN + p;
+  }
 
   const PLATS = [
     { key: 'netease', name: '网易云音乐', short: '网易云', color: '#e60026',
@@ -169,10 +181,28 @@ const Music = (() => {
     }
     const media = row.querySelector('.mu-media');
     if (media && s.localAudio) {
-      /* 本站同源文件直接给 audio：流式加载、点一下就响，不用等整首下完 */
-      media.innerHTML = `<audio controls preload="none" src="${esc(s.localAudio)}"></audio>` +
+      /* 音频文件在自家仓库，但 Pages 在国内只有 ~13KB/s（4MB 要 5 分钟），
+       * 直接用同源 <audio src> 点播会「很久才有声音」。改走 jsdelivr CDN（同一份文件，
+       * ~900KB/s），preload=metadata 让浏览器后台先把 moov 头/首段拉好，点播即响。 */
+      const playSrc = cdnURL(s.localAudio) || s.localAudio;
+      media.innerHTML = `<span class="mu-buf" data-buf>缓冲中…</span>` +
+        `<audio controls preload="metadata" src="${esc(playSrc)}"></audio>` +
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
-        '<span class="mu-local">本站同源文件 · 秒开播放</span>';
+        '<span class="mu-local">自家仓库文件 · CDN 加速 · 点开即播</span>';
+      const au = media.querySelector('audio');
+      const buf = media.querySelector('[data-buf]');
+      if (au && buf) {
+        const ready = () => { buf.style.display = 'none'; };
+        au.addEventListener('canplay', ready);
+        au.addEventListener('loadedmetadata', ready);
+        au.addEventListener('playing', ready);
+        au.addEventListener('error', () => {
+          /* CDN 万一失败，回退同源相对路径 */
+          if (au.dataset.fallback) return;
+          au.dataset.fallback = '1';
+          au.src = s.localAudio; au.load();
+        });
+      }
       const btn = row.querySelector('.mu-btn-dl');
       if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');
@@ -190,17 +220,29 @@ const Music = (() => {
   async function ensureBlob(s) {
     if (s.blobUrl) return s.blobUrl;
     if (s._blobPromise) return s._blobPromise;
-    if (!LOCAL_AUDIO_RE.test(s.localAudio || '')) return '';
+    const norm = normLocal(s.localAudio);
+    if (!LOCAL_AUDIO_RE.test(norm)) return '';
     s._blobPromise = (async () => {
-      try {
-        const r = await fetch(s.localAudio, { signal: AbortSignal.timeout(60000) });
-        if (!r.ok) return '';
-        const b = await r.blob();
-        if (!b || b.size < 20000 || /text\/html|application\/json/i.test(b.type || '')) return '';
-        s.blob = b;
-        s.blobUrl = URL.createObjectURL(b);
-        return s.blobUrl;
-      } catch (e) { return ''; }
+      /* 通道竞速：CDN 秒下（~4s），同源 Pages 兜底。任一拿到合法音频字节即返回。
+       * 绝不整首走 Pages——实测 4MB 下 120 秒才 1.5MB，60s 超时必然失败。 */
+      const urls = [AUDIO_CDN + norm, s.localAudio];
+      return new Promise(resolve => {
+        let done = false, timer = null;
+        const finish = (u, blob) => {
+          if (done) return; done = true;
+          if (timer) clearTimeout(timer);
+          if (u) { s.blob = blob; s.blobUrl = URL.createObjectURL(blob); resolve(s.blobUrl); }
+          else resolve('');
+        };
+        urls.forEach(src => {
+          fetch(src, { signal: AbortSignal.timeout(45000) }).then(async r => {
+            if (!r.ok) return;
+            const b = await r.blob();
+            if (b && b.size >= 20000 && !/text\/html|application\/json/i.test(b.type || '')) finish(src, b);
+          }).catch(() => {});
+        });
+        timer = setTimeout(() => finish('', null), 50000);
+      });
     })();
     const u = await s._blobPromise;
     if (!u) s._blobPromise = null;    /* 失败允许下次重试（文件可能还没提交上来） */
@@ -225,10 +267,10 @@ const Music = (() => {
       setTimeout(() => { btn.textContent = old; }, 3500);
       return;
     }
-    /* 同源相对路径 + download 属性：浏览器原生流式下载，立刻开始，
-     * 不用先把 2~4MB 整首读进内存，也绝不打开任何第三方页面。 */
+    /* 自家仓库文件走 CDN + download 属性：浏览器原生流式下载，立刻开始，
+     * 不用先把 2~4MB 整首读进内存，也绝不打开任何第三方音频源。 */
     const a = document.createElement('a');
-    a.href = s.localAudio;
+    a.href = cdnURL(s.localAudio) || s.localAudio;
     a.download = safeName(s);
     document.body.appendChild(a); a.click(); a.remove();
     btn.textContent = '已开始下载 ✓';
@@ -274,9 +316,10 @@ const Music = (() => {
   /* ===== 卡片：平台彩色图标 + 音符图标 + 同源封面 ===== */
   function card(s) {
     const media = s.localAudio
-      ? `<audio controls preload="none" src="${esc(s.localAudio)}"></audio>` +
+      ? `<span class="mu-buf" data-buf>缓冲中…</span>` +
+        `<audio controls preload="metadata" src="${esc(cdnURL(s.localAudio) || s.localAudio)}"></audio>` +
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
-        '<span class="mu-local">本站同源文件 · 秒开播放</span>'
+        '<span class="mu-local">自家仓库文件 · CDN 加速 · 点开即播</span>'
       : '<span class="mu-noaudio">等自家仓库备音频… · 可先点「打开原曲」</span>';
     return `<div class="mu-item" style="--mc:${s.color}">
       <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg()}</span></div>
@@ -301,7 +344,20 @@ const Music = (() => {
     if (sv) sv.onclick = () => saveToLibrary(s, sv);
     const op = row.querySelector('.mu-btn-open');
     if (op) op.onclick = () => window.open(s.page || NE_HOME, '_blank', 'noopener');
-    /* 本地 blob 播放器不会因第三方直链过期而报错，无需备用源切换 */
+    /* 缓冲提示：CDN 首段就绪即隐藏；CDN 失败回退同源 */
+    const au = row.querySelector('.mu-media audio');
+    const buf = row.querySelector('.mu-media [data-buf]');
+    if (au && buf) {
+      const ready = () => { buf.style.display = 'none'; };
+      au.addEventListener('canplay', ready);
+      au.addEventListener('loadedmetadata', ready);
+      au.addEventListener('playing', ready);
+      au.addEventListener('error', () => {
+        if (au.dataset.fallback) return;
+        au.dataset.fallback = '1';
+        au.src = s.localAudio; au.load();
+      });
+    }
   }
 
   function renderInto(container, songs, note) {
@@ -314,10 +370,10 @@ const Music = (() => {
         const p = PLATS.find(x => x.key === sc.platform) || PLATS[0];
         return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(sc)}</div>`;
       }).join('') + '</div>' +
-      '<div class="mu-foot">本地毫秒级出卡片；歌名 / 歌手 / 封面 / 官方音频由自家仓库代抓后存成同源文件，' +
-      '汽水优先官方原版（M4A），网易云为官方试听（MP3）。页面不出现任何第三方音频地址，' +
-      '播放 / 下载直接走本站同源文件（流式秒开，不用等整首下完），只有入库才取字节转本地文件。' +
-      '首次解析约半分钟，之后同源缓存秒出。' +
+      '<div class="mu-foot">本地毫秒级出卡片；歌名 / 歌手 / 封面 / 官方音频由自家仓库代抓后存进仓库，' +
+      '汽水优先官方原版（M4A），网易云为官方试听（MP3）。页面不出现任何第三方音频源，' +
+      '音频是自家仓库文件、经 CDN 加速分发（点开即播，不用等整首下完）。' +
+      '首次解析约半分钟，之后秒出。' +
       '点【下载音乐】按原格式保存，点【存到壁纸库】永久进「壁纸 → 音乐」。' +
       '版权归原平台及权利人，仅个人试听收藏。</div>';
     box.querySelectorAll('.mu-row').forEach((row, i) => bindCard(row, songs[i]));
@@ -425,6 +481,7 @@ const Music = (() => {
 .mu-pending{font-size:11px;color:#0369a1;background:#f0f9ff;border-radius:7px;padding:4px 8px;display:inline-block}
 .mu-match{display:inline-block;margin-top:4px;font-size:10px;color:#b45309;background:#fffbeb;border-radius:6px;padding:2px 6px}
 .mu-local{display:inline-block;margin-top:4px;margin-left:5px;font-size:10px;color:#0f766e;background:#f0fdfa;border-radius:6px;padding:2px 6px}
+.mu-buf{display:inline-block;font-size:10.5px;color:#0369a1;background:#f0f9ff;border-radius:6px;padding:2px 7px;margin-bottom:3px}
 .mu-enrich{font-size:10.5px;color:#98a1b0;margin-top:3px;min-height:14px}
 .mu-actions{display:grid;grid-template-columns:1fr;gap:5px;flex:none;width:118px}
 .mu-actions button{border:none;border-radius:9px;padding:7px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}

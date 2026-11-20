@@ -513,3 +513,35 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);transition:background-
 .thumb img.wp-loaded{animation:wpFade .28s ease both}
 @keyframes wpFade{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){.thumb img.wp-loaded{animation:none}}
+
+/* ================================================================
+ * 老设备流畅模式（iPhone 6S/7/8/SE 等 A9~A11、2GB 内存）
+ * 大面积实时模糊在旧 GPU 上是滚动掉帧的头号元凶。窄屏或 JS 判定为
+ * 低端机时，玻璃改近实色、去掉实时模糊与多余合成层，纸感不变但丝滑。
+ * ================================================================ */
+@media (max-width:430px){
+  .topbar,.tabs .seg,#onboard .ob-card,.modal-card{
+    -webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+    background:rgba(251,247,234,.96)!important;
+  }
+  .chip:not(.active){
+    -webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+    background:rgba(251,247,234,.92)!important;
+  }
+  .modal,.pay-shade{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}
+/* JS 按硬件能力打标（比宽度更准，覆盖大屏低端机） */
+.low-end .topbar,.low-end .tabs .seg,.low-end #onboard .ob-card,.low-end .modal-card{
+  -webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+  background:rgba(251,247,234,.96)!important;
+}
+.low-end .chip:not(.active){
+  -webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+  background:rgba(251,247,234,.92)!important;
+}
+.low-end .modal,.low-end .pay-overlay{
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+}
+/* 老机器少一层动画合成：卡片淡入、图标微动直接关掉 */
+.low-end .thumb img.wp-loaded{animation:none!important}
+.low-end .carditem,.low-end .carditem:hover{transition:none!important;transform:none!important}

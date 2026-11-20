@@ -119,10 +119,20 @@
     });
   }
 
-  // 首屏 + 每次网格重绘后扫描
+  // 首屏 + 每次网格重绘后扫描（app.js 的 appendGrid 会主动调 __imgAccelScan）
   window.__imgAccelScan = scan;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', scan);
   } else { scan(); }
-  setInterval(scan, 1500);
+  /* 不再用 setInterval(scan,1500) 每 1.5 秒全局扫 DOM——老手机持续耗电掉帧。
+   * 改用 MutationObserver：只有在真的插入了 accel-img 节点时才扫描一次。 */
+  if ('MutationObserver' in window) {
+    let scheduled = false;
+    const mo = new MutationObserver(function () {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(function () { scheduled = false; scan(); }, 60);
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  }
 })();

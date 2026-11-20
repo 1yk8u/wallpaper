@@ -24,6 +24,16 @@
 'use strict';
 
 const Payment = (() => {
+  /* iOS 15 及更早（iPhone 6S 等）没有 AbortSignal.timeout，直接调会抛错卡死。
+   * 用 AbortController + setTimeout 手写，兼容所有浏览器。 */
+  const toSignal = (ms) => {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(ms);
+    }
+    const c = new AbortController();
+    setTimeout(() => c.abort(), ms);
+    return c.signal;
+  };
   /* ===== 配置 ===== */
   const FREE_DAILY_LIMIT = 5;          // 免费：每天 5 张
   const MEMBER_DAILY_LIMIT = 100;      // 会员：每天 100 张
@@ -194,6 +204,8 @@ const Payment = (() => {
     s.id = 'payment-styles';
     s.textContent = `
 .pay-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:16px}
+@media(max-width:430px){.pay-overlay{backdrop-filter:none}}
+.low-end .pay-overlay{backdrop-filter:none}
 .pay-card{background:#fff;border-radius:20px;max-width:460px;width:100%;max-height:92vh;overflow-y:auto;padding:26px;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3);color:#1f2937}
 .pay-close{position:absolute;top:10px;right:14px;background:none;border:none;font-size:26px;cursor:pointer;color:#9ca3af;line-height:1;padding:4px 8px;border-radius:8px}
 .pay-close:hover{background:#f3f4f6;color:#111}
@@ -445,7 +457,7 @@ const Payment = (() => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tierId: tier.id, amount: tier.price }),
-        signal: AbortSignal.timeout(12000),
+        signal: toSignal(12000),
       });
       data = await res.json();
     } catch (e) {
@@ -573,7 +585,7 @@ const Payment = (() => {
       }
       try {
         if (chan === 'netlify') {
-          const r = await fetch(API_NETLIFY + '?action=query&sn=' + encodeURIComponent(sn), { signal: AbortSignal.timeout(8000) });
+          const r = await fetch(API_NETLIFY + '?action=query&sn=' + encodeURIComponent(sn), { signal: toSignal(8000) });
           const j = await r.json();
           if (j.status === 'paid') paidSuccess(sn, tier, j.tierId);
           return;

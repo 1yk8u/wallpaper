@@ -21,6 +21,22 @@ const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isAndroid = /Android/.test(navigator.userAgent);
 
+/* 低端设备打标：老 iPhone（6S/7/8/SE，≤2 核）或低内存（≤2GB）走流畅模式。
+ * 关掉实时毛玻璃与动效，A9/A10 上滚动不再掉帧。新机不受影响。 */
+(function markLowEnd() {
+  try {
+    const cores = navigator.hardwareConcurrency || 8;
+    const mem = navigator.deviceMemory || 8;   // Safari 没有该字段，默认大
+    let osVer = 99;
+    const m = navigator.userAgent.match(/OS (\d+)[._]/);
+    if (m) osVer = parseInt(m[1], 10);
+    const oldApple = isIOS && (osVer <= 15 || cores <= 2);
+    if (oldApple || cores <= 2 || mem <= 2) {
+      document.documentElement.classList.add('low-end');
+    }
+  } catch (e) {}
+})();
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function toast(msg, kind) {

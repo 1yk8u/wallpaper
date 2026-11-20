@@ -9,11 +9,9 @@
 <!-- 引擎加速①：提前建立各图片通道的连接，省掉几十~几百 ms 握手 -->
 <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<!-- 引擎加速②：HTML 一解析就开始下首屏小清单 -->
-<link rel="preload" href="data/hero.json?v=20261117C" as="fetch" crossorigin>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=20261117B">
+<link rel="stylesheet" href="style.css?v=20261120E">
 </head>
 <body>
 
@@ -219,19 +217,11 @@
 <noscript><div class="file-banner">本站需要启用 JavaScript 才能使用。</div></noscript>
 
 
-<script src="core.js?v=20261114F"></script>
-<script src="img-accel.js?v=20261117A"></script>
-<script src="app.js?v=20261120A"></script>
+<script src="core.js?v=20261120E"></script>
+<script src="img-accel.js?v=20261120E"></script>
+<script src="app.js?v=20261120E"></script>
 <script src="extractor.js?v=20261119A"></script>
 <script src="music.js?v=20261120D"></script>
-<script src="payment.js?v=20261119A"></script>
-<script>
-/* 缩略图离线缓存：二次打开不必重新下载图片，注册失败也不影响使用 */
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js', { scope: './' }).catch(function () {});
-  });
-}
-</script>
+<script src="payment.js?v=20261120E"></script>
 </body>
 </html>

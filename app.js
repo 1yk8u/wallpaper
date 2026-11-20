@@ -73,7 +73,6 @@ function mergeItems(remote, local) {
 const MANIFEST_KEY = 'wp_manifest_v4';
 /* ?v= 是清单版本号：内容结构变了必须换号，否则 Pages 的 CDN
  * 仍会返回旧清单（比如没有 thumb / lqip 字段），手机上就享受不到提速。 */
-const HERO_URL = 'data/hero.json?v=20261117C';
 const MANIFEST_URL = 'data/wallpapers.json?v=20261117C';
 function manifestCacheRead() {
   try {
@@ -103,23 +102,9 @@ async function loadData(silent, force) {
     hadCache = allItems.length > 0;
     if (hadCache && !silent) renderAll();
   }
-  /* 首屏小清单带 base64 内联清晰图：无论有无缓存都拉，
-   * 清单一到首屏 6 张立刻显示，不用等任何图片网络请求。 */
-  let heroItems = [];
-  if (!force) {
-    try {
-      const hr = await withTimeout(fetch(HERO_URL, { cache: 'force-cache' }), 15000);
-      if (hr.ok) {
-        const hj = await hr.json();
-        heroItems = Array.isArray(hj.items) ? hj.items.filter(x => x && x.url) : [];
-        if (heroItems.length) {
-          allItems = applyHeroInline(allItems, heroItems);
-          if (!allItems.length) allItems = mergeItems(heroItems, localItemsRead());
-          if (!silent) renderAll();
-        }
-      }
-    } catch (e) { /* 小清单失败就等完整清单，不影响最终显示 */ }
-  }
+  /* 首屏小清单 hero.json 已移除（该文件本就不存在，旧代码每次白等 15s 拖慢首屏）。
+   * 现在直接靠 localStorage 清单缓存秒开 + 分页懒加载，首屏不再多走一次无效请求。 */
+  const heroItems = [];
   /* 平时走 Pages 的 CDN 缓存；只有用户点刷新才带时间戳强制拉新 */
   const url = MANIFEST_URL + (force ? '&ts=' + Date.now() : '');
   try {

@@ -1,0 +1,29 @@
+{
+  "key": "x:2123682439079854270",
+  "ok": true,
+  "data": {
+    "kind": "video",
+    "images": [
+      "data/xmedia/xm_f04b31713456d84d.jpg"
+    ],
+    "play": "data/xmedia/xm_254346da48a6ef5a.mp4",
+    "cover": "data/xmedia/xm_f04b31713456d84d.jpg",
+    "title": "@MovistareSports · 🟣 Speed lleva 40 horas seguidas jugando a GTA 6. Sin dormir",
+    "platform": "x",
+    "platformName": "X",
+    "via": "X 专用通道 · FxTwitter（开源 FxEmbed）（开源免费网关）",
+    "channel": "x-only",
+    "source": "FxTwitter（开源 FxEmbed）",
+    "xAuthor": "Movistar eSports",
+    "xHandle": "MovistareSports",
+    "xText": "🟣 Speed lleva 40 horas seguidas jugando a GTA 6. Sin dormir😱 Ya ha completado el 81% del juego.",
+    "xCreated": "Fri Nov 20 07:38:44 +0000 2026",
+    "xAvatar": "data/xmedia/xm_70ac3961f8ac348d.jpg",
+    "xPhotos": 1,
+    "xVideos": 1,
+    "xFailed": [],
+    "ts": "2026-11-20T13:46:07.083Z"
+  },
+  "engine": "1.2.0",
+  "ts": "2026-11-20T13:46:07.083Z"
+}

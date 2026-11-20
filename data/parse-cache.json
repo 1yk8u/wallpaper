@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-19T13:59:52.047Z",
+  "updated": "2026-11-20T13:11:10.076Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7326,6 +7326,26 @@
       "platform": "douyin",
       "engine": "1.2.0",
       "ts": "2026-11-19T13:59:52.042Z"
+    },
+    "qishui:ixotrspf": {
+      "kind": "music",
+      "platform": "qishui",
+      "id": "7662604428868683803",
+      "title": "Cryon（带感纯享版）",
+      "artist": "遗憾的蘑菇头",
+      "album": "",
+      "cover": "data/covers/cv_f46fc2756e92f0a4.jpg",
+      "localAudio": "data/audio/au_f46fc2756e92f0a4.m4a",
+      "audioExt": "m4a",
+      "audioSize": 1440883,
+      "audioMime": "audio/mp4",
+      "matched": false,
+      "source": "汽水官方原版音频（自家仓库同源缓存）",
+      "key": "qishui:ixotrspf",
+      "ts": "2026-11-20T13:11:10.073Z",
+      "via": "汽水官方原版音频（自家仓库同源缓存）",
+      "platformName": "汽水音乐",
+      "engine": "1.2.0"
     }
   },
   "engine": "1.2.0"

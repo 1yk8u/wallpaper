@@ -75,21 +75,74 @@ async function fetchJSONSmart(url, opt) {
   catch (e) { throw new Error('接口返回的不是有效 JSON'); }
 }
 
+/* ---------------- 自家仓库媒体多通道展开 ----------------
+ * 同源 Pages 国内实测仅 ~10KB/s，jsdelivr 官方/国内镜像 ~1MB/s。
+ * 把任意形态的仓库地址（相对路径 / 官方 CDN / 镜像 / 同源）统一展开成
+ * 「官方 → 镜像 → 同源」候选，供下载并行竞速，谁先拿到完整字节用谁。
+ * 第三方直链（快手/抖音等）不属于自家仓库，原样返回。 */
+const REPO_GH = '1yk8u/wallpaper@main/';
+const REPO_CDNS = [
+  'https://cdn.jsdelivr.net/gh/' + REPO_GH,
+  'https://cdn.jsdmirror.com/gh/' + REPO_GH
+];
+function repoRelOf(u) {
+  const s = String(u || '').trim();
+  let m;
+  if ((m = s.match(/^https?:\/\/cdn\.(?:jsdelivr\.net|jsdmirror\.com)\/gh\/1yk8u\/wallpaper@main\/(.+)$/i)) ||
+      (m = s.match(/^https?:\/\/1yk8u\.github\.io\/wallpaper\/(.+)$/i))) {
+    try { return decodeURIComponent(m[1]).replace(/^\/+/, ''); }
+    catch (e) { return m[1].replace(/^\/+/, ''); }
+  }
+  if (/^(?:data|wallpapers)\//i.test(s)) return s.replace(/^\/+/, '');
+  return '';
+}
+function expandMediaURLs(u) {
+  const one = Array.isArray(u) ? u : [u];
+  const out = [];
+  const push = (x) => { if (x && out.indexOf(x) < 0) out.push(x); };
+  for (const x of one) {
+    if (!x) continue;
+    const rel = repoRelOf(x);
+    if (!rel) { push(x); continue; }
+    const enc = encodeURI(rel).replace(/#/g, '%23').replace(/\?/g, '%3F');
+    REPO_CDNS.forEach(c => push(c + enc));
+    push('https://1yk8u.github.io/wallpaper/' + enc);  /* 中文名 CDN 可能 404，同源兜底 */
+  }
+  return out;
+}
+
 async function fetchBlobSmart(url, opt) {
   opt = opt || {};
-  const ms = opt.ms || 60000;
-  /* 支持候选数组：逐个试，任一拿到合法字节即返回（CDN 官方→镜像→同源）。 */
-  const urls = Array.isArray(url) ? url : [url];
-  for (const u of urls) {
-    if (!u) continue;
-    try {
-      const resp = await withTimeout(fetch(u), Math.min(ms, 30000), '直连超时');
-      if (!resp.ok) continue;
-      const b = await resp.blob();
-      if (b.size > 0 && !/^\s*(text\/html|application\/json)/i.test(b.type || '')) return b;
-    } catch (e) {}
-  }
-  return null;
+  const ms = opt.ms || 30000;
+  const urls = expandMediaURLs(url);
+  if (!urls.length) return null;
+  const canAbort = (typeof AbortController !== 'undefined');
+  /* 并行竞速：三条通道同时取字节，谁先拿到合法 blob 就 abort 其余。
+   * 旧的「串行 + 每路 30s」在慢通道上累计要等 90 秒，正是"下载等很久"的根因。
+   * iPhone 6S 老 Safari 若无 AbortController，退化为并行但不中断（谁快用谁）。 */
+  return new Promise((resolve) => {
+    const ctrls = [];
+    let settled = false;
+    const finish = (blob) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ctrls.forEach(c => { try { c.abort(); } catch (e) {} });
+      resolve(blob);
+    };
+    const timer = setTimeout(() => finish(null), ms);
+    urls.forEach((u) => {
+      let init = {};
+      if (canAbort) { const c = new AbortController(); ctrls.push(c); init = { signal: c.signal }; }
+      fetch(u, init)
+        .then(r => { if (!r || !r.ok) throw new Error('http'); return r.blob(); })
+        .then(b => {
+          if (b && b.size > 0 && !/^\s*(?:text\/html|application\/json)/i.test(b.type || '')) finish(b);
+          else throw new Error('bad');
+        })
+        .catch(() => {});
+    });
+  });
 }
 
 async function downloadViaBlob(url, filename) {
@@ -119,23 +172,15 @@ async function downloadSmart(url, filename) {
     }
     if (typeof Payment.updateQuotaDisplay === 'function') Payment.updateQuotaDisplay();
   }
-  toast('↓️ 开始下载…');
-  /* 自家仓库相对路径（data/ 开头）扩展成多通道候选：
-   * 同源 Pages 国内仅 ~12KB/s 会超时，先试 jsdelivr 官方/国内镜像。 */
-  let urls = url;
-  if (typeof url === 'string' && /^data\//i.test(url)) {
-    const enc = encodeURI(url).replace(/#/g, '%23').replace(/\?/g, '%3F');
-    urls = [
-      'https://cdn.jsdelivr.net/gh/1yk8u/wallpaper@main/' + enc,
-      'https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/' + enc,
-      url,
-    ];
-  }
+  toast('↓ 正在准备「' + (filename || '文件') + '」，自动选最快线路…');
+  /* 候选扩展已下沉到 fetchBlobSmart：任意入口传入的 URL 都会自动展开成
+   * 官方 CDN→镜像→同源并并行竞速，不再串行等待。 */
   try {
-    const ok = await downloadViaBlob(urls, filename);
-    if (ok) { toast('已开始保存', 'ok'); return true; }
+    const ok = await downloadViaBlob(url, filename);
+    if (ok) { toast('已保存：' + (filename || '文件'), 'ok'); return true; }
   } catch (e) { /* 继续兜底 */ }
-  window.open((Array.isArray(urls) ? urls[0] : url), '_blank', 'noopener');
+  const first = expandMediaURLs(url)[0] || (Array.isArray(url) ? url[0] : url);
+  window.open(first, '_blank', 'noopener');
   toast(isIOS
     ? '未自动保存？在打开的页面长按视频/图片 → 存储到手机'
     : '未自动保存？在打开的页面长按或右键另存为', 'warn');

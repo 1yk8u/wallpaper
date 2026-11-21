@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T04:19:52.475Z",
+  "updated": "2026-11-21T04:23:08.398Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7431,6 +7431,30 @@
       "xVideos": 1,
       "xFailed": [],
       "ts": "2026-11-21T04:19:52.470Z",
+      "engine": "1.2.0"
+    },
+    "x:2117278712617967721": {
+      "kind": "video",
+      "images": [
+        "data/xmedia/xm_c149b22c8f907ef4.jpg"
+      ],
+      "play": "data/xmedia/xm_ef81e157fa7200e4.mp4",
+      "cover": "data/xmedia/xm_c149b22c8f907ef4.jpg",
+      "title": "@mrbeast_update · MrBeast posted a new tiktok! \"Bro really juan that challenge",
+      "platform": "x",
+      "platformName": "X",
+      "via": "X 专用通道 · FxTwitter（开源 FxEmbed）（开源免费网关）",
+      "channel": "x-only",
+      "source": "FxTwitter（开源 FxEmbed）",
+      "xAuthor": "MrBeast Updates",
+      "xHandle": "mrbeast_update",
+      "xText": "MrBeast posted a new tiktok! \"Bro really juan that challenge\"",
+      "xCreated": "Mon Nov 02 15:32:36 +0000 2026",
+      "xAvatar": "data/xmedia/xm_b1d3bc062cb9685c.jpg",
+      "xPhotos": 1,
+      "xVideos": 1,
+      "xFailed": [],
+      "ts": "2026-11-21T04:23:08.393Z",
       "engine": "1.2.0"
     }
   },

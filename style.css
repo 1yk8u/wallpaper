@@ -188,6 +188,10 @@ main{padding:22px 20px 36px;max-width:1160px;margin:0 auto}
   padding:8px 2px 2px;font-family:var(--serif);font-size:13px;font-weight:600;color:var(--ink);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+/* 音乐卡片内嵌播放器：紧凑一条，点开即播；不随卡片 hover 放大 */
+.card-audio{margin-top:6px;line-height:0}
+.card-audio audio{display:block;width:100%;height:34px;border-radius:5px;background:#efe8d3}
+.carditem:hover .card-audio audio{transform:none}
 
 .empty{text-align:center;padding:64px 20px}
 .empty-ico{width:70px;height:70px;margin:0 auto 16px;border-radius:50%;

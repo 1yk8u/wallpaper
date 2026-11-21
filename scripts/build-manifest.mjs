@@ -13,15 +13,24 @@ const WALLPAPER_DIR = process.cwd() + '/wallpapers';
 const DATA_DIR = process.cwd() + '/data';
 const THUMB_DIR = process.cwd() + '/thumbs';
 
-/* 迷你预览表：make-thumbs.py 生成，内联进清单让首屏秒显模糊图 */
-let LQIPS = {};
-try { LQIPS = JSON.parse(readFileSync(DATA_DIR + '/lqip.json', 'utf8')) || {}; }
-catch (e) {}
-
 const isVideo = (n) => /\.(mp4|mov|webm|m4v)$/i.test(n);
 const isGif = (n) => /\.gif$/i.test(n);
 const isImage = (n) => /\.(jpe?g|png|webp|avif)$/i.test(n);
 const isAudio = (n) => /\.(mp3|m4a|aac|flac|wav|ogg|opus)$/i.test(n);
+
+/* 音乐加速：wallpapers/音乐_xxx.mp3 是中文名，jsdelivr CDN 会 404、只能走慢速同源。
+ * 但存库时用零字节引用，它与 data/audio/au_xxx.ext 是同一份字节（blob sha 相同）。
+ * 这里先给 data/audio 里的英文文件建 sha→路径 映射，音乐条目据此写 playUrl，
+ * 前端播放器用 playUrl 走 CDN 英文路径，点播秒响。 */
+const AUDIO_DIR = process.cwd() + '/data/audio';
+const shaToAudio = new Map();
+try {
+  for (const f of readdirSync(AUDIO_DIR)) {
+    if (!/^au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(f)) continue;
+    const id = gitBlobId(join(AUDIO_DIR, f));
+    if (id) shaToAudio.set(id, 'data/audio/' + f);
+  }
+} catch (e) { /* 没有 data/audio 目录就跳过，音乐退回同源播放 */ }
 
 function gitTime(path) {
   try {
@@ -91,12 +100,9 @@ const audio = isAudio(f.name);
       date: new Date(ts * 1000).toISOString(),
       src: 'file',
     };
-    if (coverFull) {
-      item.cover = 'wallpapers/' + relative(WALLPAPER_DIR, coverFull).split(sep).join('/');
-      const cdot = coverFull.name.lastIndexOf('.');
-      const cThumb = (cdot > 0 ? coverFull.name.slice(0, cdot) : coverFull.name) + '.webp';
-      if (existsSync(join(THUMB_DIR, cThumb))) item.coverThumb = 'thumbs/' + cThumb;
-    }
+    /* 音乐条目附 CDN 可用的英文播放路径（sha 匹配 data/audio 同字节文件） */
+    if (audio && shaToAudio.has(id)) item.playUrl = shaToAudio.get(id);
+    if (coverFull) item.cover = 'wallpapers/' + relative(WALLPAPER_DIR, coverFull).split(sep).join('/');
     const tbBase = (dot > 0 ? f.name.slice(0, dot) : f.name) + '.webp';
     if (existsSync(join(THUMB_DIR, tbBase))) item.thumb = 'thumbs/' + tbBase;
     items.push(item);
@@ -131,33 +137,6 @@ const files = scan(WALLPAPER_DIR);
 const all = files.concat(links)
   .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-/* 只给最新的 40 张内联迷你预览：首屏滑几屏都有模糊占位，清单只增 ~15KB */
-let lqipUsed = 0;
-for (const item of all) {
-  if (lqipUsed >= 40) break;
-  if (item.lqip) { lqipUsed++; continue; }
-  const base = (item.name || '').replace(/\.[^.]+$/, '') + '.webp';
-  if (LQIPS[base]) { item.lqip = LQIPS[base]; lqipUsed++; }
-}
-
-/* 首屏 6 张把缩略图 base64 内联：清单一到就是清晰图，零图片请求。
- * 单张 WebP ~10-22KB，6 张约 120KB。两个清单都带 inline，
- * 否则完整清单后台替换首屏时会把内联图覆盖掉，首屏又变慢。 */
-const hero = all.slice(0, 6);
-for (const item of hero) {
-  if (!item.thumb) continue;
-  try {
-    const buf = readFileSync(join(process.cwd(), item.thumb));
-    item.inline = 'data:image/webp;base64,' + buf.toString('base64');
-  } catch (e) {}
-}
-
 const out = { updated: new Date().toISOString(), items: all };
-/* 不缩进：859 条清单从 ~588KB 降到 ~390KB，手机首开少下载三分之一 */
-writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out), 'utf8');
-/* 首屏小清单约 120KB：前端先拉它把首屏画出来，完整清单后台慢慢下再无缝替换。 */
-writeFileSync(join(DATA_DIR, 'hero.json'),
-  JSON.stringify({ updated: out.updated, items: hero }), 'utf8');
-console.log(`hero: ${hero.length} 张首屏图（${hero.filter(x=>x.inline).length} 张内联清晰图）`);
-
+writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out, null, 2), 'utf8');
 console.log(`manifest: ${files.length} 文件 + ${links.length} 直链 = ${all.length} 条`);

@@ -186,7 +186,7 @@ const Music = (() => {
        * ~900KB/s），preload=metadata 让浏览器后台先把 moov 头/首段拉好，点播即响。 */
       const playSrc = cdnURL(s.localAudio) || s.localAudio;
       media.innerHTML = `<span class="mu-buf" data-buf>读取音源…</span>` +
-        `<audio controls preload="metadata" src="${esc(playSrc)}"></audio>` +
+        `<audio controls preload="auto" src="${esc(playSrc)}"></audio>` +
         (s.matched ? '<span class="mu-match">※ 已配同名版本</span>' : '') +
         '<span class="mu-local">本站存档 · 点开即播</span>';
       const btn = row.querySelector('.mu-btn-dl');
@@ -334,7 +334,9 @@ const Music = (() => {
       const committed = await WPGH.importEntries([{
         name,
         srcPath: normLocal(s.localAudio),
-        itemExtra: { title, cat: '音乐', kind: 'audio', gif: false },
+        /* playUrl 指向英文同源路径，供壁纸库播放器走 CDN 秒播（中文名 CDN 会 404）。
+         * build-manifest 也会用 sha 匹配补这个字段，两边一致。 */
+        itemExtra: { title, cat: '音乐', kind: 'audio', gif: false, playUrl: normLocal(s.localAudio) },
       }], { onStatus: (i, text) => { btn.textContent = text.slice(0, 8); } });
       try { committed.forEach(it => allItems.unshift(it)); renderAll(); } catch (e) {}
       if (typeof toast === 'function') toast('音乐已存入壁纸库', 'ok');
@@ -352,7 +354,7 @@ const Music = (() => {
     const no = String(n || 1).padStart(2, '0');
     const media = s.localAudio
       ? `<span class="mu-buf" data-buf>读取音源…</span>` +
-        `<audio controls preload="metadata" src="${esc(cdnURL(s.localAudio) || s.localAudio)}"></audio>` +
+        `<audio controls preload="auto" src="${esc(cdnURL(s.localAudio) || s.localAudio)}"></audio>` +
         (s.matched ? '<span class="mu-match">※ 已配同名版本</span>' : '') +
         '<span class="mu-local">本站存档 · 点开即播</span>'
       : '<span class="mu-noaudio">音源整理中，可先点「打开原曲」</span>';

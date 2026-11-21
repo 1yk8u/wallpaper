@@ -129,6 +129,18 @@ async function loadData(silent, force) {
   }
 }
 
+/* 自家音频的 CDN 加速域名：同一份仓库文件，jsdelivr 国内 ~1MB/s，
+ * 而 GitHub Pages 只有 ~13KB/s（中文名在 CDN 上还会 404）。
+ * 只接受 data/audio/au_xxx 这种英文路径，杜绝任何外部直链。 */
+const AUDIO_CDN = 'https://cdn.jsdelivr.net/gh/1yk8u/wallpaper@main/';
+function audioCDNSrc(it) {
+  if (!it) return '';
+  /* playUrl 由 build-manifest 用 sha 匹配生成，指向 data/audio/au_xxx.ext（英文、CDN 可用） */
+  const p = String(it.playUrl || (it.kind === 'audio' ? it.url : '') || '').replace(/^\/+/, '');
+  if (!/^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(p)) return '';
+  return AUDIO_CDN + p;
+}
+
 function mediaOf(u) {
   u = String(u || '');
   if (/^https?:\/\//i.test(u)) return u;
@@ -137,6 +149,9 @@ function mediaOf(u) {
 }
 
 function mediaURL(it) {
+  /* 音乐：优先走 CDN 的英文同源路径，点播秒响；没 playUrl 才退回中文慢路径 */
+  const ac = audioCDNSrc(it);
+  if (ac) return ac;
   return mediaOf(it && it.url);
 }
 
@@ -288,9 +303,15 @@ function cardHTML(it, i) {
   const bg = it.lqip
     ? ` style="background-image:url('${it.lqip}');background-size:cover;background-position:center"`
     : '';
+  /* 音乐卡片：标题下方直接内嵌紧凑播放器，点开即播（src 走 CDN 英文同源路径）。
+   * 原生 audio 控件，用户手势直接触发，iOS/安卓都能播。 */
+  const player = it.kind === 'audio'
+    ? `<div class="card-audio" onclick="event.stopPropagation()"><audio controls preload="auto" src="${escAttr(mediaURL(it))}"></audio></div>`
+    : '';
   return `<figure class="carditem${isAdmin ? ' admin-mode' : ''}" data-i="${i}">
     <div class="thumb"${bg}>${del}${thumbHTML(it, i)}</div>
     <figcaption>${esc(it.title || '未命名')}</figcaption>
+    ${player}
   </figure>`;
 }
 
@@ -309,7 +330,7 @@ function openDetail(it) {
   $id('d-title').textContent = it.title || '未命名';
   const m = $id('d-media');
   if (it.kind === 'audio') {
-    m.innerHTML = `<audio controls preload="metadata" src="${escAttr(mediaURL(it))}"></audio>`;
+    m.innerHTML = `<audio controls preload="auto" src="${escAttr(mediaURL(it))}"></audio>`;
   } else if (it.kind === 'video') {
     m.innerHTML = it.cover
       ? `<video controls playsinline preload="metadata" poster="${escAttr(coverSrc(it))}" src="${escAttr(mediaURL(it))}"></video>`
@@ -419,6 +440,8 @@ function bindUI() {
       if (it && typeof window.__wpAskDelete === 'function') window.__wpAskDelete(it);
       return;
     }
+    /* 点音乐卡片里的播放器/进度条不打开详情 */
+    if (e.target.closest('audio') || e.target.closest('.card-audio')) return;
     const fig = e.target.closest('.carditem');
     if (!fig) return;
     const it = allItems.filter(matchFilter)[Number(fig.dataset.i)];

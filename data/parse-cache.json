@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T04:25:21.488Z",
+  "updated": "2026-11-21T04:44:42.999Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7480,6 +7480,12 @@
       "xFailed": [],
       "ts": "2026-11-21T04:25:21.485Z",
       "engine": "1.2.0"
+    },
+    "qishui:i41ldu56": {
+      "err": "汽水：该分享不是单曲链接，且链接里没有 track_id",
+      "code": "UNKNOWN",
+      "engine": "1.2.0",
+      "ts": "2026-11-21T04:44:42.993Z"
     }
   },
   "engine": "1.2.0"

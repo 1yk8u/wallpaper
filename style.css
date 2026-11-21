@@ -258,6 +258,71 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);transition:background-
 .d-meta{color:var(--dim);font-size:12.5px;margin:2px 0 12px;letter-spacing:.03em}
 .d-actions{display:flex;gap:9px;flex-wrap:wrap}
 
+/* ============ 唱片机播放器（纸质标本风格，无渐变药丸） ============ */
+.player-card{max-width:430px;padding:18px 20px 20px;border-top-color:var(--wood)}
+.player-top{display:flex;align-items:center;gap:10px;padding-bottom:11px;border-bottom:1px dotted var(--line-deep)}
+.player-mark{width:30px;height:30px;border:1px solid var(--wood);border-radius:2px;display:flex;align-items:center;justify-content:center;background:var(--paper-2);flex:none}
+.player-mark svg{width:18px;height:18px;fill:none;stroke:var(--wood);stroke-width:1.8;stroke-linecap:round}
+.player-top-txt{display:flex;flex-direction:column;line-height:1.25;flex:1}
+.player-kicker{font-family:var(--serif);font-size:13px;font-weight:900;color:var(--ink);letter-spacing:.14em}
+.player-count{font-family:var(--serif);font-size:10.5px;color:var(--dim);letter-spacing:.14em;margin-top:2px}
+
+/* 唱盘 */
+.turntable{position:relative;width:200px;height:200px;margin:18px auto 14px}
+.vinyl{
+  position:absolute;left:50%;top:50%;width:180px;height:180px;margin:-90px 0 0 -90px;border-radius:50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%,#24211c 0,#24211c 2px,#2e2b25 3px,#24211c 4px),
+    #24211c;
+  box-shadow:0 6px 18px rgba(30,24,12,.38),inset 0 0 0 1px #111;
+  animation:vinyl-spin 6s linear infinite;animation-play-state:paused;
+}
+.turntable.spinning .vinyl{animation-play-state:running}
+@keyframes vinyl-spin{to{transform:rotate(360deg)}}
+.vinyl-grooves{position:absolute;inset:14px;border-radius:50%;border:1px solid rgba(255,255,255,.06);box-shadow:0 0 0 10px rgba(255,255,255,.025) inset,0 0 0 24px rgba(255,255,255,.02) inset}
+.vinyl-label{
+  position:absolute;left:50%;top:50%;width:74px;height:74px;margin:-37px 0 0 -37px;border-radius:50%;
+  background:var(--paper-2);border:1px solid var(--line-deep);overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+}
+.vinyl-label img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.92}
+.vinyl-note{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--line-deep);border-radius:50%;background:var(--paper)}
+.vinyl-note svg{width:18px;height:18px;fill:none;stroke:var(--wood);stroke-width:1.8;stroke-linecap:round}
+.vinyl-hole{position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:var(--paper);box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+/* 唱臂：暂停时抬起，播放时落到碟面 */
+.tonearm{position:absolute;right:2px;top:6px;width:96px;height:22px;transform-origin:88px 8px;transform:rotate(-26deg);transition:transform .5s cubic-bezier(.2,.8,.2,1);z-index:3}
+.turntable.spinning .tonearm{transform:rotate(-6deg)}
+.tonearm-pivot{position:absolute;right:2px;top:0;width:16px;height:16px;border-radius:50%;background:var(--paper-3);border:1px solid var(--line-deep)}
+.tonearm-needle{position:absolute;left:0;top:7px;width:82px;height:3px;background:var(--ink-2);border-radius:2px;box-shadow:0 1px 0 rgba(255,255,255,.4)}
+.tonearm-needle::after{content:'';position:absolute;left:-3px;top:-2px;width:9px;height:7px;background:var(--wood);border-radius:1px}
+
+/* 曲名 */
+.player-song{text-align:center;min-height:52px}
+.player-title{font-family:var(--serif);font-size:17px;font-weight:900;color:var(--ink);line-height:1.4;word-break:break-all}
+.player-artist{font-family:var(--serif);font-size:12px;color:var(--dim);letter-spacing:.06em;margin-top:3px}
+
+/* 进度 */
+.player-progress{margin:14px 0 6px}
+.player-seek{-webkit-appearance:none;appearance:none;width:100%;height:3px;background:var(--line);border-radius:0;outline:none;margin:0}
+.player-seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:var(--wood);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--wood);cursor:pointer}
+.player-seek::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:var(--wood);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--wood);cursor:pointer}
+.player-time{display:flex;justify-content:space-between;font-family:var(--serif);font-size:10.5px;color:var(--dim);letter-spacing:.08em;margin-top:5px}
+
+/* 控制键 */
+.player-ctrls{display:flex;align-items:center;justify-content:center;gap:26px;margin:12px 0 4px}
+.pl-btn{width:44px;height:44px;border:1px solid var(--line-deep);border-radius:2px;background:var(--paper);color:var(--ink-2);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:none}
+.pl-btn:active{background:var(--paper-3)}
+.pl-btn svg{width:20px;height:20px}
+.pl-btn.pl-play{width:56px;height:56px;border-width:2px;border-color:var(--wood);color:var(--paper);background:var(--wood)}
+.pl-play .ic-play{width:24px;height:24px;margin-left:2px}
+.pl-play .ic-pause{width:24px;height:24px;display:none}
+.pl-play.playing .ic-play{display:none}
+.pl-play.playing .ic-pause{display:block}
+.player-swipe-hint{text-align:center;font-family:var(--serif);font-size:10.5px;color:var(--dim);letter-spacing:.05em;margin:2px 0 14px}
+.player-actions{display:flex;gap:9px}
+.player-actions .btn{flex:1;justify-content:center}
+#pl-audio{display:none}
+
 /* ---------- 设置（分节、虚线分隔） ---------- */
 .sec{background:transparent;border:none;border-top:1px dashed var(--line-deep);border-radius:0;padding:14px 2px 12px;margin-top:14px;
   box-shadow:none}

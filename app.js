@@ -511,13 +511,19 @@ function bindUI() {
     const fig = e.target.closest('.carditem');
     if (!fig) return;
     const it = allItems.filter(matchFilter)[Number(fig.dataset.i)];
-    if (it) openDetail(it);
+    if (!it) return;
+    /* 音乐 → 打开唱片机播放器；其余 → 通用详情 */
+    if (it.kind === 'audio' && typeof Player !== 'undefined') Player.open(it);
+    else openDetail(it);
   });
 
   const br = $id('btn-refresh');
   if (br) br.addEventListener('click', () => { toast('刷新中…'); loadData(false, true); });
   const brl = $id('btn-reload');
   if (brl) brl.addEventListener('click', () => loadData());
+
+  const mp = $id('modal-player');
+  if (mp) mp.addEventListener('click', e => { if (e.target === mp && typeof Player !== 'undefined') Player.close(); });
 
   const md = $id('modal-detail');
   if (md) {
@@ -846,6 +852,153 @@ function initAdmin() {
     openModal('modal-del');
   };
 }
+
+/* ==================================================================
+ * Player —— 唱片机播放器
+ * 点壁纸库里的音乐打开：旋转黑胶、唱臂起落、左右切歌/滑动、进度。
+ * 音频走 audioCandidateURLs 的多通道（官方 CDN→镜像→同源），出错自动换路。
+ * ================================================================== */
+const Player = (() => {
+  let queue = [];       // 当前可播放的音乐列表（allItems 里所有 audio 项）
+  let idx = 0;          // 当前曲目在 queue 中的位置
+  let audio = null, vinyl = null, table = null, playBtn = null;
+  let seek = null, curEl = null, durEl = null, titleEl = null, artistEl = null;
+  let labelEl = null, countEl = null;
+  let inited = false, seeking = false;
+  const NOTE = '<path d="M9 17.5V6.4l9-2V15.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.4" cy="17.6" r="2.6" fill="currentColor"/><circle cx="15.4" cy="15.6" r="2.6" fill="currentColor"/>';
+  const fmt = (s) => {
+    s = Math.floor(Number(s) || 0);
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  };
+
+  function init() {
+    if (inited) return;
+    inited = true;
+    audio = $id('pl-audio'); vinyl = $id('pl-vinyl'); table = $id('pl-turntable');
+    playBtn = $id('pl-play'); seek = $id('pl-seek'); curEl = $id('pl-cur');
+    durEl = $id('pl-dur'); titleEl = $id('pl-title'); artistEl = $id('pl-artist');
+    labelEl = $id('pl-label'); countEl = $id('pl-count');
+
+    $id('pl-close').addEventListener('click', close);
+    playBtn.addEventListener('click', togglePlay);
+    $id('pl-prev').addEventListener('click', () => step(-1));
+    $id('pl-next').addEventListener('click', () => step(1));
+
+    /* 进度拖拽 */
+    seek.addEventListener('input', () => {
+      seeking = true;
+      if (audio && isFinite(audio.duration)) {
+        try { audio.currentTime = (Number(seek.value) / 1000) * audio.duration; } catch (e) {}
+      }
+      if (curEl) curEl.textContent = fmt((Number(seek.value) / 1000) * (audio && audio.duration || 0));
+    });
+    seek.addEventListener('change', () => { seeking = false; });
+
+    if (audio) {
+      audio.addEventListener('timeupdate', () => {
+        if (!audio || !isFinite(audio.duration) || audio.duration <= 0) return;
+        if (!seeking) seek.value = Math.round((audio.currentTime / audio.duration) * 1000);
+        if (curEl) curEl.textContent = fmt(audio.currentTime);
+      });
+      audio.addEventListener('loadedmetadata', () => { if (durEl) durEl.textContent = fmt(audio.duration); });
+      audio.addEventListener('play', () => { if (table) table.classList.add('spinning'); if (playBtn) playBtn.classList.add('playing'); });
+      audio.addEventListener('pause', () => { if (table) table.classList.remove('spinning'); if (playBtn) playBtn.classList.remove('playing'); });
+      audio.addEventListener('ended', () => step(1));
+      /* 多通道回退：某一路加载失败，按候选列表依次换源 */
+      audio.addEventListener('error', onSourceError);
+    }
+
+    /* 左右滑动切歌（在唱盘区域） */
+    let tx = 0, ty = 0;
+    table.addEventListener('touchstart', (e) => {
+      const t = e.changedTouches[0]; tx = t.clientX; ty = t.clientY;
+    }, { passive: true });
+    table.addEventListener('touchend', (e) => {
+      const t = e.changedTouches[0];
+      const dx = t.clientX - tx, dy = t.clientY - ty;
+      if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) step(dx < 0 ? 1 : -1);
+    }, { passive: true });
+    /* 点封面切换播放/暂停 */
+    if (vinyl) vinyl.addEventListener('click', togglePlay);
+
+    /* 下载 / 存库 */
+    $id('pl-download').addEventListener('click', () => {
+      const it = queue[idx]; if (!it) return;
+      const name = decodeURIComponent((it.url || '').split('/').pop()) || '音乐';
+      downloadSmart(mediaURL(it), name);
+    });
+    $id('pl-lib').addEventListener('click', () => {
+      const it = queue[idx]; if (!it) return;
+      toast('这条音乐已在壁纸库里了', 'ok');
+      close();
+    });
+  }
+
+  let srcTry = 0;
+  function loadCurrent(autoplay) {
+    const it = queue[idx];
+    if (!it || !audio) return;
+    titleEl.textContent = it.title || '未命名';
+    artistEl.textContent = [it.artist, it.album].filter(Boolean).join(' · ') || '佚名';
+    countEl.textContent = 'No.' + String(idx + 1).padStart(2, '0') + ' / ' + String(queue.length).padStart(2, '0');
+    /* 碟心封面：优先封面图，否则音符图标 */
+    labelEl.innerHTML = '<span class="vinyl-note"><svg viewBox="0 0 24 24" aria-hidden="true">' + NOTE + '</svg></span>';
+    if (it.cover) {
+      const img = new Image();
+      img.onload = () => { if (queue[idx] === it) labelEl.innerHTML = '<img src="' + escAttr(coverSrc(it)) + '" alt="">'; };
+      img.src = coverSrc(it);
+    }
+    if (curEl) curEl.textContent = '0:00';
+    if (durEl) durEl.textContent = '0:00';
+    if (seek) seek.value = 0;
+    /* 多通道候选 */
+    srcTry = 0;
+    const cands = (typeof audioCandidateURLs === 'function') ? audioCandidateURLs(it) : [mediaURL(it)];
+    audio._cands = cands.length ? cands : [mediaURL(it)];
+    trySetSource(0);
+    if (autoplay) {
+      const p = audio.play();
+      if (p && p.catch) p.catch(() => {});
+    }
+  }
+  function trySetSource(n) {
+    if (!audio || !audio._cands) return;
+    srcTry = n;
+    if (n >= audio._cands.length) return;
+    try { audio.src = audio._cands[n]; audio.load(); } catch (e) {}
+  }
+  function onSourceError() {
+    if (!audio || !audio._cands) return;
+    if (srcTry < audio._cands.length - 1) trySetSource(srcTry + 1);
+  }
+
+  function togglePlay() {
+    if (!audio) return;
+    if (audio.paused) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
+    else audio.pause();
+  }
+  function step(d) {
+    if (queue.length <= 1) { toast('壁纸库里暂时只有这一首音乐', 'warn'); return; }
+    idx = (idx + d + queue.length) % queue.length;
+    loadCurrent(true);
+  }
+  function open(it) {
+    init();
+    queue = allItems.filter(x => x && x.kind === 'audio');
+    if (!queue.length) queue = [it];
+    const at = queue.findIndex(x => x === it || x.url === it.url);
+    idx = at >= 0 ? at : 0;
+    loadCurrent(true);
+    openModal('modal-player');
+  }
+  function close() {
+    if (audio) { try { audio.pause(); } catch (e) {} }
+    if (table) table.classList.remove('spinning');
+    if (playBtn) playBtn.classList.remove('playing');
+    closeModal('modal-player');
+  }
+  return { open, close };
+})();
 
 /* 供解析页（extractor.js）调用的导出：配置内置，永远可用 */
 const WPGH = {

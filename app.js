@@ -134,6 +134,7 @@ async function loadData(silent, force) {
  * 而 GitHub Pages 只有 ~13KB/s（中文名在 CDN 上还会 404）。
  * 只接受 data/audio/au_xxx 这种英文路径，杜绝任何外部直链。 */
 const AUDIO_CDN = 'https://cdn.jsdelivr.net/gh/1yk8u/wallpaper@main/';
+const AUDIO_CDN_MIRROR = 'https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/';
 function audioCDNSrc(it) {
   if (!it) return '';
   /* playUrl 由 build-manifest 用 sha 匹配生成，指向 data/audio/au_xxx.ext（英文、CDN 可用） */
@@ -142,20 +143,23 @@ function audioCDNSrc(it) {
   return AUDIO_CDN + p;
 }
 
-/* 音频候选地址：按「快→稳」排序。
- * ① jsdelivr CDN 英文路径（国内快，但偶尔连不上/被墙）
- * ② 同源 Pages 英文路径（慢一点但几乎总能通）
- * ③ 同源 Pages 原始路径（中文名兜底）
- * 播放器首选用①，onerror 时由全局委托依次切到②③，保证只要有一条通就能播。 */
+/* 音频候选地址：按「快→稳」排序，onerror 时依次尝试，只要有一条通就能播。
+ * ① jsdelivr 官方 CDN（英文路径，最快；部分国内网络会连不上 → 触发回退）
+ * ② jsdelivr 国内镜像 jsdmirror（国内更稳、实测更快）
+ * ③ 同源 Pages 英文路径（慢一点但几乎总能通）
+ * ④ 同源 Pages 原始路径（中文名兜底） */
 function absURL(p) { try { return new URL(String(p), location.href).href; } catch (e) { return String(p); } }
 function audioCandidateURLs(it) {
   if (!it) return [];
   const out = [];
-  const cdn = audioCDNSrc(it);                 /* ① CDN 英文 */
-  if (cdn) out.push(cdn);
   const p = String(it.playUrl || '').replace(/^\/+/, '');
-  if (/^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(p)) out.push(absURL(p));  /* ② 同源英文 */
-  if (it.url) out.push(absURL(mediaOf(it.url)));                                  /* ③ 同源原始 */
+  const valid = /^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(p);
+  if (valid) {
+    out.push(AUDIO_CDN + p);        /* ① 官方 CDN */
+    out.push(AUDIO_CDN_MIRROR + p); /* ② 国内镜像 */
+    out.push(absURL(p));            /* ③ 同源英文 */
+  }
+  if (it.url) out.push(absURL(mediaOf(it.url)));  /* ④ 同源原始 */
   return out.filter((u, i, a) => u && a.indexOf(u) === i);   /* 去重 */
 }
 function audioFirstSrc(it) {

@@ -1,0 +1,29 @@
+{
+  "key": "x:2123911492982485201",
+  "ok": true,
+  "data": {
+    "kind": "video",
+    "images": [
+      "data/xmedia/xm_6e6cf2702d0624e5.jpg"
+    ],
+    "play": "data/xmedia/xm_55b6e5c4d9800131.mp4",
+    "cover": "data/xmedia/xm_6e6cf2702d0624e5.jpg",
+    "title": "@AleiahLock · MrBeast started GTA 6 with $0 and one goal: buy the most exp",
+    "platform": "x",
+    "platformName": "X",
+    "via": "X 专用通道 · FxTwitter（开源 FxEmbed）（开源免费网关）",
+    "channel": "x-only",
+    "source": "FxTwitter（开源 FxEmbed）",
+    "xAuthor": "Aleiah",
+    "xHandle": "AleiahLock",
+    "xText": "MrBeast started GTA 6 with $0 and one goal: buy the most expensive car in the game within 100 hours. The video hit 22M views in its first day. How the money moved: > first payday: $20 from a guy reading on the street > hour 5, first gas station: $800. The clerk passed out mid-robbery > hour 16: $17,000 > hour 28: about $20,000 > after hour 47: a getaway with $31,000 > then $87,000, then $110,000 by the end > registering the stolen car alone: $66,250. The underglow: $500 Rockstar let them play before launch. 13 years of waiting, and the biggest GTA 6 video on YouTube is a money ladder. @grok what's the fastest legit way to $100K in GTA 6 right now?",
+    "xCreated": "Fri Nov 20 22:48:54 +0000 2026",
+    "xAvatar": "data/xmedia/xm_9fb2b888ae61824d.jpg",
+    "xPhotos": 1,
+    "xVideos": 1,
+    "xFailed": [],
+    "ts": "2026-11-21T03:54:11.525Z"
+  },
+  "engine": "1.2.0",
+  "ts": "2026-11-21T03:54:11.525Z"
+}

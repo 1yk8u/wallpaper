@@ -70,11 +70,12 @@ function mergeItems(remote, local) {
 }
 /* 清单缓存：数据落 localStorage，下次打开先秒开旧清单，再后台核对更新。
  * 原实现每次都带 ?ts=Date.now() 强刷 588KB，国内网络要卡十几秒。 */
-const MANIFEST_KEY = 'wp_manifest_v5';
+const MANIFEST_KEY = 'wp_manifest_v6';
 /* ?v= 是清单版本号：内容结构变了必须换号，否则 Pages 的 CDN
  * 仍会返回旧清单（比如没有 playUrl / thumb / lqip 字段），手机上就享受不到提速。
- * 20261121B：音乐条目新增 playUrl（英文 CDN 路径），旧版缓存没有它会导致播放走中文慢路径失败。 */
-const MANIFEST_URL = 'data/wallpapers.json?v=20261121B';
+ * 20261121B：音乐条目新增 playUrl（英文 CDN 路径），旧版缓存没有它会导致播放走中文慢路径失败。
+ * 20261121K：音乐条目新增 cover（封面路径），旧版缓存没有它导致卡片/碟心只显示默认音符。 */
+const MANIFEST_URL = 'data/wallpapers.json?v=20261121K';
 function manifestCacheRead() {
   try {
     const j = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null');
@@ -329,9 +330,23 @@ const FADE_ONLOAD = ' onload="this.classList.add(\'wp-loaded\')"';
 
 /* 封面优先用压过的缩略图；没有才退回原封面。
  * data/covers 走国内镜像（官方 CDN 对新文件常 301/未同步，镜像实测稳定 200）。 */
+/* 封面相对路径（含自愈）。旧清单的音乐条目没有 cover 字段，但从 playUrl/url
+ * 的 au_<sha>.m4a 能反推出封面 cv_<sha>.jpg（存库时音频与封面共用同一 sha）。
+ * 这样即便手机赖在旧清单缓存里不走，专辑封面也能显示，不再只显示默认音符。 */
+function coverRel(it) {
+  if (!it) return '';
+  let c = it.coverThumb || it.cover || '';
+  if (!c && it.kind === 'audio') {
+    const src = String(it.playUrl || it.url || '');
+    const m = src.match(/au_([0-9a-f]{16})\.(?:mp3|m4a|webm|ogg)/i)
+           || src.match(/(?:audio|音乐)[/\\][^/\\]*?([0-9a-f]{16})\.(?:mp3|m4a)/i);
+    if (m) c = 'data/covers/cv_' + m[1] + '.jpg';
+  }
+  return c;
+}
 function coverSrc(it) {
-  if (!it || !it.cover) return '';
-  const c = it.coverThumb || it.cover;
+  const c = coverRel(it);
+  if (!c) return '';
   if (/^data\//i.test(c)) return 'https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/' + encodeRepoPath(c.replace(/^\/+/, ''));
   return mediaOf(c);
 }
@@ -341,7 +356,8 @@ function thumbHTML(it, i) {
   const la = loadAttrs(i);
   const dyn = itemDyn(it);
   if (it.kind === 'audio') {
-    const cover = it.cover ? `<img ${la} src="${escAttr(coverSrc(it))}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
+    const cv = coverSrc(it);
+    const cover = cv ? `<img ${la} src="${escAttr(cv)}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
     return `<span class="badge badge-audio">音乐</span><div class="vid-ph audio-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg></div><span class="play-tag play-tag-audio"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg>音频</span>`;
   }
   const badge = `<span class="badge">${dyn ? '动态' : '静态'}</span>`;
@@ -947,7 +963,7 @@ const Player = (() => {
     countEl.textContent = 'No.' + String(idx + 1).padStart(2, '0') + ' / ' + String(queue.length).padStart(2, '0');
     /* 碟心封面：优先封面图，否则音符图标。多通道逐个试，谁先加载出图用谁 */
     labelEl.innerHTML = '<span class="vinyl-note"><svg viewBox="0 0 24 24" aria-hidden="true">' + NOTE + '</svg></span>';
-    if (it.cover) loadCover(it);
+    if (coverRel(it)) loadCover(it);
     if (curEl) curEl.textContent = '0:00';
     if (durEl) durEl.textContent = '0:00';
     if (seek) seek.value = 0;
@@ -970,7 +986,7 @@ const Player = (() => {
   /* 封面多通道：国内镜像→同源→官方 CDN。逐个 new Image 试，第一个 onload 的贴上，
    * 避免单一官方 CDN 301/未同步导致碟心空白。 */
   function loadCover(it) {
-    const rel = String(it.cover || '').replace(/^\/+/, '');
+    const rel = coverRel(it).replace(/^\/+/, '');
     if (!rel) return;
     const enc = encodeRepoPath(rel);
     const cands = /^https?:\/\//i.test(rel) ? [rel] : [

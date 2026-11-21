@@ -70,10 +70,11 @@ function mergeItems(remote, local) {
 }
 /* 清单缓存：数据落 localStorage，下次打开先秒开旧清单，再后台核对更新。
  * 原实现每次都带 ?ts=Date.now() 强刷 588KB，国内网络要卡十几秒。 */
-const MANIFEST_KEY = 'wp_manifest_v4';
+const MANIFEST_KEY = 'wp_manifest_v5';
 /* ?v= 是清单版本号：内容结构变了必须换号，否则 Pages 的 CDN
- * 仍会返回旧清单（比如没有 thumb / lqip 字段），手机上就享受不到提速。 */
-const MANIFEST_URL = 'data/wallpapers.json?v=20261117C';
+ * 仍会返回旧清单（比如没有 playUrl / thumb / lqip 字段），手机上就享受不到提速。
+ * 20261121B：音乐条目新增 playUrl（英文 CDN 路径），旧版缓存没有它会导致播放走中文慢路径失败。 */
+const MANIFEST_URL = 'data/wallpapers.json?v=20261121B';
 function manifestCacheRead() {
   try {
     const j = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null');
@@ -136,10 +137,58 @@ const AUDIO_CDN = 'https://cdn.jsdelivr.net/gh/1yk8u/wallpaper@main/';
 function audioCDNSrc(it) {
   if (!it) return '';
   /* playUrl 由 build-manifest 用 sha 匹配生成，指向 data/audio/au_xxx.ext（英文、CDN 可用） */
-  const p = String(it.playUrl || (it.kind === 'audio' ? it.url : '') || '').replace(/^\/+/, '');
+  const p = String(it.playUrl || '').replace(/^\/+/, '');
   if (!/^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(p)) return '';
   return AUDIO_CDN + p;
 }
+
+/* 音频候选地址：按「快→稳」排序。
+ * ① jsdelivr CDN 英文路径（国内快，但偶尔连不上/被墙）
+ * ② 同源 Pages 英文路径（慢一点但几乎总能通）
+ * ③ 同源 Pages 原始路径（中文名兜底）
+ * 播放器首选用①，onerror 时由全局委托依次切到②③，保证只要有一条通就能播。 */
+function absURL(p) { try { return new URL(String(p), location.href).href; } catch (e) { return String(p); } }
+function audioCandidateURLs(it) {
+  if (!it) return [];
+  const out = [];
+  const cdn = audioCDNSrc(it);                 /* ① CDN 英文 */
+  if (cdn) out.push(cdn);
+  const p = String(it.playUrl || '').replace(/^\/+/, '');
+  if (/^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(p)) out.push(absURL(p));  /* ② 同源英文 */
+  if (it.url) out.push(absURL(mediaOf(it.url)));                                  /* ③ 同源原始 */
+  return out.filter((u, i, a) => u && a.indexOf(u) === i);   /* 去重 */
+}
+function audioFirstSrc(it) {
+  const c = audioCandidateURLs(it);
+  return c.length ? c[0] : mediaOf(it && it.url);
+}
+
+/* 全局 error 委托（capture 阶段，因为 media 的 error 不冒泡）：
+ * 音频某一路加载失败时，自动切到下一个候选地址。
+ * 只在「当前 src 命中候选列表」时切换，切完还失败就继续，直到用完为止。 */
+document.addEventListener('error', function (e) {
+  const a = e.target;
+  if (!a || a.tagName !== 'AUDIO') return;
+  let it = null;
+  const fig = a.closest('.carditem');
+  if (fig && fig.getAttribute('data-i') != null) it = gridList[+fig.getAttribute('data-i')];
+  else if (a.closest('#d-media')) it = curDetail;
+  if (!it) return;
+  const cands = audioCandidateURLs(it);
+  if (cands.length < 2) return;
+  const cur = a.getAttribute('src') || '';
+  let idx = -1;
+  for (let i = 0; i < cands.length; i++) {
+    if (cur === cands[i] || absURL(cur) === cands[i]) { idx = i; break; }
+  }
+  if (idx < 0 || idx >= cands.length - 1) return;   /* 已是最后一路，放弃 */
+  const next = cands[idx + 1];
+  a.dataset.fb = '1';
+  a.setAttribute('src', next);
+  /* 只换地址、不自动 play()：iOS 非手势的 play() 会被拒，
+   * 原生控件上用户再点一下播放即可（此时已是能通的同源地址）。 */
+  try { a.load(); } catch (err) {}
+}, true);
 
 function mediaOf(u) {
   u = String(u || '');

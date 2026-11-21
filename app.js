@@ -326,10 +326,13 @@ function loadAttrs(i) {
 /* 图片解码完成后加个淡入，避免加载中露出灰块闪烁 */
 const FADE_ONLOAD = ' onload="this.classList.add(\'wp-loaded\')"';
 
-/* 封面优先用压过的缩略图；没有才退回原封面 */
+/* 封面优先用压过的缩略图；没有才退回原封面。
+ * data/covers 走国内镜像（官方 CDN 对新文件常 301/未同步，镜像实测稳定 200）。 */
 function coverSrc(it) {
   if (!it || !it.cover) return '';
-  return mediaOf(it.coverThumb || it.cover);
+  const c = it.coverThumb || it.cover;
+  if (/^data\//i.test(c)) return 'https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/' + encodeRepoPath(c.replace(/^\/+/, ''));
+  return mediaOf(c);
 }
 
 function thumbHTML(it, i) {
@@ -941,13 +944,9 @@ const Player = (() => {
     titleEl.textContent = it.title || '未命名';
     artistEl.textContent = [it.artist, it.album].filter(Boolean).join(' · ') || '佚名';
     countEl.textContent = 'No.' + String(idx + 1).padStart(2, '0') + ' / ' + String(queue.length).padStart(2, '0');
-    /* 碟心封面：优先封面图，否则音符图标 */
+    /* 碟心封面：优先封面图，否则音符图标。多通道逐个试，谁先加载出图用谁 */
     labelEl.innerHTML = '<span class="vinyl-note"><svg viewBox="0 0 24 24" aria-hidden="true">' + NOTE + '</svg></span>';
-    if (it.cover) {
-      const img = new Image();
-      img.onload = () => { if (queue[idx] === it) labelEl.innerHTML = '<img src="' + escAttr(coverSrc(it)) + '" alt="">'; };
-      img.src = coverSrc(it);
-    }
+    if (it.cover) loadCover(it);
     if (curEl) curEl.textContent = '0:00';
     if (durEl) durEl.textContent = '0:00';
     if (seek) seek.value = 0;
@@ -966,6 +965,28 @@ const Player = (() => {
     srcTry = n;
     if (n >= audio._cands.length) return;
     try { audio.src = audio._cands[n]; audio.load(); } catch (e) {}
+  }
+  /* 封面多通道：国内镜像→同源→官方 CDN。逐个 new Image 试，第一个 onload 的贴上，
+   * 避免单一官方 CDN 301/未同步导致碟心空白。 */
+  function loadCover(it) {
+    const rel = String(it.cover || '').replace(/^\/+/, '');
+    if (!rel) return;
+    const enc = encodeRepoPath(rel);
+    const cands = /^https?:\/\//i.test(rel) ? [rel] : [
+      'https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/' + enc,
+      absURL(enc),
+      REPO_CDN + enc
+    ];
+    let done = false;
+    cands.forEach(u => {
+      const img = new Image();
+      img.onload = () => {
+        if (done || queue[idx] !== it || !u) return;
+        done = true;
+        labelEl.innerHTML = '<img src="' + escAttr(u) + '" alt="">';
+      };
+      img.src = u;
+    });
   }
   function onSourceError() {
     if (!audio || !audio._cands) return;

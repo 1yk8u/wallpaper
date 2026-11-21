@@ -358,7 +358,10 @@ const Music = (() => {
         srcPath: normLocal(s.localAudio),
         /* playUrl 指向英文同源路径，供壁纸库播放器走 CDN 秒播（中文名 CDN 会 404）。
          * build-manifest 也会用 sha 匹配补这个字段，两边一致。 */
-        itemExtra: { title, cat: '音乐', kind: 'audio', gif: false, playUrl: normLocal(s.localAudio) },
+        /* cover 指向自家仓库 data/covers/xx.jpg（译名英文路径，CDN 可用），
+         * 存进清单后音乐卡片与唱片机碟心都会显示这张真实封面。 */
+        itemExtra: { title, cat: '音乐', kind: 'audio', gif: false,
+          playUrl: normLocal(s.localAudio), cover: s.cover || '' },
       }], { onStatus: (i, text) => { btn.textContent = text.slice(0, 8); } });
       try { committed.forEach(it => allItems.unshift(it)); renderAll(); } catch (e) {}
       if (typeof toast === 'function') toast('音乐已存入壁纸库', 'ok');

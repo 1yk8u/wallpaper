@@ -145,10 +145,32 @@ const Music = (() => {
         e = flat(got) || e;
       }
       if (good(e)) applyMeta(s, e, row);
-      else failMeta(s, row, noteEl, '自家仓库还在准备音频，再点一次解析即可');
+      else armBackground(s, row, noteEl, key);
     } catch (err) {
-      failMeta(s, row, noteEl, '仓库取音频失败，再点一次解析即可');
+      if (key) armBackground(s, row, noteEl, key);
+      else failMeta(s, row, noteEl, '仓库取音频失败，再点一次解析即可');
     }
+  }
+
+  /* 首次解析时音频可能还在自家仓库抓取中（约半分钟）。旧版只让用户「再点一次」，
+   * 很多人就此停住。改为后台静默补拉：每 5 秒看一眼轻量结果，音频一落库就自动
+   * 更新这张卡片（图标/播放器/下载/存库全部就位），最多守 3 分钟。 */
+  function armBackground(s, row, noteEl, key) {
+    failMeta(s, row, noteEl, '自家仓库正在抓音频，好了一会自动出现…');
+    if (typeof lightResultGet !== 'function' || !key) return;
+    let tries = 0;
+    const timer = setInterval(async () => {
+      if (++tries > 36 || s.localAudio) { clearInterval(timer); return; }
+      try {
+        const e = flat(await lightResultGet(key, 8000, 0));
+        if (good(e)) {
+          clearInterval(timer);
+          applyMeta(s, e, row);
+          if (noteEl) noteEl.textContent = '音频已就绪 · 可播放/下载/存库';
+          if (typeof toast === 'function') toast('「' + (e.title || s.title) + '」音频已就绪', 'ok');
+        }
+      } catch (err) {}
+    }, 5000);
   }
 
   function failMeta(s, row, note, msg) {

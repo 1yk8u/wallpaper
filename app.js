@@ -140,12 +140,13 @@ function audioCDNSrc(it) {
   /* playUrl 由 build-manifest 用 sha 匹配生成，指向 data/audio/au_xxx.ext（英文、CDN 可用） */
   const p = String(it.playUrl || '').replace(/^\/+/, '');
   if (!/^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(p)) return '';
-  return AUDIO_CDN + p;
+  /* 国内镜像优先：实测官方 jsdelivr 对自家 data/ 文件常 301/403，镜像稳定 200 且更快 */
+  return AUDIO_CDN_MIRROR + p;
 }
 
 /* 音频候选地址：按「快→稳」排序，onerror 时依次尝试，只要有一条通就能播。
- * ① jsdelivr 官方 CDN（英文路径，最快；部分国内网络会连不上 → 触发回退）
- * ② jsdelivr 国内镜像 jsdmirror（国内更稳、实测更快）
+ * ① jsdelivr 国内镜像 jsdmirror（国内实测最快最稳，~330KB/s）
+ * ② jsdelivr 官方 CDN（英文路径，备用；部分国内网络会 301/403 → 触发回退）
  * ③ 同源 Pages 英文路径（慢一点但几乎总能通）
  * ④ 同源 Pages 原始路径（中文名兜底） */
 function absURL(p) { try { return new URL(String(p), location.href).href; } catch (e) { return String(p); } }
@@ -155,8 +156,8 @@ function audioCandidateURLs(it) {
   const p = String(it.playUrl || '').replace(/^\/+/, '');
   const valid = /^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(p);
   if (valid) {
-    out.push(AUDIO_CDN + p);        /* ① 官方 CDN */
-    out.push(AUDIO_CDN_MIRROR + p); /* ② 国内镜像 */
+    out.push(AUDIO_CDN_MIRROR + p); /* ① 国内镜像（最快最稳） */
+    out.push(AUDIO_CDN + p);        /* ② 官方 CDN */
     out.push(absURL(p));            /* ③ 同源英文 */
   }
   if (it.url) out.push(absURL(mediaOf(it.url)));  /* ④ 同源原始 */

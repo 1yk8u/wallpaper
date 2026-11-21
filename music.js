@@ -129,9 +129,20 @@ const Music = (() => {
   /* ===== 向自家仓库要【同源音频】，拿不到就派单让 Actions 抓 ===== */
   async function enrich(s, row, noteEl) {
     const key = cacheKeyOf(s);
-    if (!key || typeof serverCacheGet !== 'function') { failMeta(s, row, noteEl, '无法识别这条分享'); return; }
+    if (!key || (typeof serverCacheGet !== 'function' && typeof lightResultGet !== 'function')) {
+      failMeta(s, row, noteEl, '无法识别这条分享'); return;
+    }
     try {
-      let e = flat(await serverCacheGet(key));
+      /* ① 先读 2KB 轻量单条结果（api 通道 ~1s），命中即秒出——
+       *    不再为查一首歌先下载 600KB 总缓存，已缓存音乐解析稳在 5 秒内。 */
+      let e = null;
+      if (typeof lightResultGet === 'function') {
+        try { e = flat(await lightResultGet(key, 8000, 0)); } catch (err) {}
+      }
+      /* ② 轻量结果没有，再退回总缓存 */
+      if (!good(e) && typeof serverCacheGet === 'function') {
+        try { e = flat(await serverCacheGet(key)) || e; } catch (err) {}
+      }
       if (!good(e)) {
         /* 旧缓存里只有第三方 audio 直链 → 一律不认，重新让自家仓库抓一遍 */
         if (typeof relayDispatch !== 'function') { failMeta(s, row, noteEl, '自家仓库中转不可用'); return; }

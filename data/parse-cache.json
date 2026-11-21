@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T04:44:42.999Z",
+  "updated": "2026-11-21T04:45:14.050Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7482,10 +7482,24 @@
       "engine": "1.2.0"
     },
     "qishui:i41ldu56": {
-      "err": "汽水：该分享不是单曲链接，且链接里没有 track_id",
-      "code": "UNKNOWN",
-      "engine": "1.2.0",
-      "ts": "2026-11-21T04:44:42.993Z"
+      "kind": "music",
+      "platform": "qishui",
+      "id": "7685992649920546862",
+      "title": "Sky Gale（追风调）",
+      "artist": "DJ余烬Embe",
+      "album": "",
+      "cover": "data/covers/cv_9a999ec6264fbe05.jpg",
+      "localAudio": "data/audio/au_9a999ec6264fbe05.m4a",
+      "audioExt": "m4a",
+      "audioSize": 2384234,
+      "audioMime": "audio/mp4",
+      "matched": false,
+      "source": "汽水官方原版音频（自家仓库同源缓存）",
+      "key": "qishui:i41ldu56",
+      "ts": "2026-11-21T04:45:14.045Z",
+      "via": "汽水官方原版音频（自家仓库同源缓存）",
+      "platformName": "汽水音乐",
+      "engine": "1.2.0"
     }
   },
   "engine": "1.2.0"

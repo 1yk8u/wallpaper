@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-20T13:46:07.086Z",
+  "updated": "2026-11-21T00:34:15.271Z",
   "entries": {
     "v.kuaishou.com/jofuaju2": {
       "kind": "images",
@@ -7373,6 +7373,17 @@
       "xFailed": [],
       "ts": "2026-11-20T13:46:07.083Z",
       "engine": "1.2.0"
+    },
+    "v.kuaishou.com/kmn4fidc": {
+      "kind": "video",
+      "images": [],
+      "play": "https://txmov2.a.kwimgs.com/upic/2026/11/01/13/BMjAyNjExMDExMzIzMjRfMjU5MzA5NTg3OF8yMTQyMDczMjY0NThfMl8z_b_Ba0e293ce890af9c46557c5f048f7ca83.mp4?clientCacheKey=3xn3y7vgc4kenjy_b.mp4&tt=b&di=73bea908&bp=10000",
+      "cover": "https://p23.a.yximgs.com/upic/2026/11/01/13/BMjAyNjExMDExMzIzMjRfMjU5MzA5NTg3OF8yMTQyMDczMjY0NThfMl8z_Bbf00171fc5333e9f6f6c180ed5e5d8de.jpg?clientCacheKey=3xn3y7vgc4kenjy.jpg&di=73bea908&bp=10000",
+      "title": "“请用绝对清醒的理智 压制你不该有的情绪” #音乐 #struct #小鱼 #英文歌曲 @会火 @我要上热门 @快手热点",
+      "via": "免费聚合接口",
+      "platform": "kuaishou",
+      "engine": "1.2.0",
+      "ts": "2026-11-21T00:34:15.265Z"
     }
   },
   "engine": "1.2.0"

@@ -1,0 +1,10 @@
+{
+  "key": "qishui:i41lb58c",
+  "ok": false,
+  "error": {
+    "code": "UNKNOWN",
+    "message": "汽水：该分享不是单曲链接，且链接里没有 track_id"
+  },
+  "engine": "1.2.0",
+  "ts": "2026-11-21T04:57:39.018Z"
+}

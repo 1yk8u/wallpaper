@@ -1,0 +1,29 @@
+{
+  "key": "x:2123844781814304777",
+  "ok": true,
+  "data": {
+    "kind": "video",
+    "images": [
+      "data/xmedia/xm_471fb20c10982b25.jpg"
+    ],
+    "play": "data/xmedia/xm_2c0db8905045fd2c.mp4",
+    "cover": "data/xmedia/xm_471fb20c10982b25.jpg",
+    "title": "@pittofTroy · NVIDIA CEO Jensen Huang after resigning... Reporter: You're ",
+    "platform": "x",
+    "platformName": "X",
+    "via": "X 专用通道 · FxTwitter（开源 FxEmbed）（开源免费网关）",
+    "channel": "x-only",
+    "source": "FxTwitter（开源 FxEmbed）",
+    "xAuthor": "Donald",
+    "xHandle": "pittofTroy",
+    "xText": "NVIDIA CEO Jensen Huang after resigning... Reporter: You're not going back to NVIDIA? Huang: I'm considering new challenges now too. Reporter: But you're the founder himself! Huang: Because I've led that company for 33 years. Reporter: Okay, so what will you do after that? Huang: I'm thinking about starting a new company. Reporter: How would you raise the funding!? Huang: I'm looking to raise 50 billion dollars. Reporter: That's over 7 trillion yen!? Hahaha. Huang: Because I have a network of relationships around the world. Reporter: But that would be difficult, wouldn't it? Huang: I've built trust with customers, so it's no problem. Reporter: Would you really become NVIDIA's competitor? Huang: Who knows hahaha. This makes you think as a CEO, company expansion is also an amazing thing. But when you leave that company, what's left? A CEO's true wealth isn't just in the company's name. The trust you've built, your network, your achievements. All of that is closely tied to future challenges. Losing the company doesn't necessarily mean losing the trust too. That's what really matters for a CEO.",
+    "xCreated": "Fri Nov 20 18:23:49 +0000 2026",
+    "xAvatar": "data/xmedia/xm_ce0d818ae77d641d.jpg",
+    "xPhotos": 1,
+    "xVideos": 1,
+    "xFailed": [],
+    "ts": "2026-11-21T04:25:21.485Z"
+  },
+  "engine": "1.2.0",
+  "ts": "2026-11-21T04:25:21.485Z"
+}

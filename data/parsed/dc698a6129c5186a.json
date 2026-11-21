@@ -1,0 +1,29 @@
+{
+  "key": "x:2123512091093135681",
+  "ok": true,
+  "data": {
+    "kind": "video",
+    "images": [
+      "data/xmedia/xm_21fa946f25e4bda1.jpg"
+    ],
+    "play": "data/xmedia/xm_ab661fce34a32a59.mp4",
+    "cover": "data/xmedia/xm_21fa946f25e4bda1.jpg",
+    "title": "@yoxics · MrBeast was given early access to GTA VI, becoming the first",
+    "platform": "x",
+    "platformName": "X",
+    "via": "X 专用通道 · FxTwitter（开源 FxEmbed）（开源免费网关）",
+    "channel": "x-only",
+    "source": "FxTwitter（开源 FxEmbed）",
+    "xAuthor": "yoxic",
+    "xHandle": "yoxics",
+    "xText": "MrBeast was given early access to GTA VI, becoming the first content creator to complete 100 hours of the story I'm so grateful Rockstar let us play it early. If you end up playing this game, make sure you take your time and enjoy it. It really is something special.\"",
+    "xCreated": "Thu Nov 19 20:21:50 +0000 2026",
+    "xAvatar": "data/xmedia/xm_ee16c23f3e7d2907.jpg",
+    "xPhotos": 1,
+    "xVideos": 1,
+    "xFailed": [],
+    "ts": "2026-11-21T04:19:52.470Z"
+  },
+  "engine": "1.2.0",
+  "ts": "2026-11-21T04:19:52.470Z"
+}

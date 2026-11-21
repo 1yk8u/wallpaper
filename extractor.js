@@ -315,6 +315,20 @@ function renderExtract(r, plat, url) {
   box.classList.remove('hidden');
   box.innerHTML = exResultHTML(r, plat);
 
+  /* 视频播放器多通道回退：CDN 官方→国内镜像→同源，任一能通就播。
+   * 自家仓库视频走同源 Pages 国内仅 ~12KB/s，必走 CDN；CDN 连不上时逐级切。 */
+  if (r.kind === 'video' && r.play) {
+    const vid = box.querySelector('.ex-video');
+    if (vid) {
+      const cands = (typeof repoMediaCandidates === 'function') ? repoMediaCandidates(r.play)
+        : [(typeof mediaOf === 'function') ? mediaOf(r.play) : r.play];
+      let idx = 0;
+      vid.addEventListener('error', () => {
+        if (idx < cands.length - 1) { idx++; try { vid.src = cands[idx]; vid.load(); } catch (e) {} }
+      });
+    }
+  }
+
   /* 勾选：默认全选（保留一键全存），可逐项取消；按钮实时显示已选数量 */
   const chks = Array.from(box.querySelectorAll('.ex-chk'));
   const all = $id('ex-all');
@@ -342,8 +356,11 @@ function renderExtract(r, plat, url) {
   box.querySelectorAll('.ex-imggrid .dl').forEach(b => {
     b.onclick = () => {
       const u = (r.images || [])[Number(b.dataset.i)];
-      if (u) downloadSmart((typeof mediaOf === 'function') ? mediaOf(u) : u,
-        (sanitizeName(r.title || 'img') + '-' + (Number(b.dataset.i) + 1) + guessExt(u)));
+      if (u) {
+        const urls = (/^data\//i.test(u) && typeof repoMediaCandidates === 'function')
+          ? repoMediaCandidates(u) : ((typeof mediaOf === 'function') ? mediaOf(u) : u);
+        downloadSmart(urls, (sanitizeName(r.title || 'img') + '-' + (Number(b.dataset.i) + 1) + guessExt(u)));
+      }
     };
   });
   $id('ex-dlall').onclick = () => downloadAll(r);
@@ -361,14 +378,18 @@ async function downloadAll(r) {
   const mu = (u) => (typeof mediaOf === 'function') ? mediaOf(u) : u;
   if (r.kind === 'video') {
     if (prog) prog.textContent = '下载中…';
-    await downloadSmart(mu(r.play), sanitizeName(r.title || 'video') + guessExt(r.play));
+    const vurls = (/^data\//i.test(r.play) && typeof repoMediaCandidates === 'function')
+      ? repoMediaCandidates(r.play) : mu(r.play);
+    await downloadSmart(vurls, sanitizeName(r.title || 'video') + guessExt(r.play));
     if (prog) prog.textContent = '';
     return;
   }
   const imgs = r.images || [];
   for (let i = 0; i < imgs.length; i++) {
     if (prog) prog.textContent = '下载 ' + (i + 1) + ' / ' + imgs.length + ' …';
-    try { await downloadViaBlob(mu(imgs[i]), sanitizeName(r.title || 'img') + '-' + (i + 1) + guessExt(imgs[i])); }
+    const iurls = (/^data\//i.test(imgs[i]) && typeof repoMediaCandidates === 'function')
+      ? repoMediaCandidates(imgs[i]) : mu(imgs[i]);
+    try { await downloadViaBlob(iurls, sanitizeName(r.title || 'img') + '-' + (i + 1) + guessExt(imgs[i])); }
     catch (e) { /* 单张失败继续 */ }
     await sleep(250);
   }
@@ -404,9 +425,10 @@ async function saveToLibrary(r, plat) {
       if (!u) continue;
       let bytes = null;
       try {
-        const fetchURL = (typeof mediaOf === 'function') ? mediaOf(u) : u;
-        const resp = await withTimeout(fetch(fetchURL), 45000, '取回超时');
-        if (resp && resp.ok) bytes = new Uint8Array(await resp.arrayBuffer());
+        const fetchURLs = (/^data\//i.test(u) && typeof repoMediaCandidates === 'function')
+          ? repoMediaCandidates(u) : [(typeof mediaOf === 'function') ? mediaOf(u) : u];
+        const blob = (typeof fetchBlobSmart === 'function') ? await fetchBlobSmart(fetchURLs, { ms: 60000 }) : null;
+        if (blob) bytes = new Uint8Array(await blob.arrayBuffer());
       } catch (e) { /* 单张失败跳过 */ }
       if (!bytes || !bytes.length) continue;
       const ext = guessExt(u);

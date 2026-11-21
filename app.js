@@ -194,11 +194,24 @@ document.addEventListener('error', function (e) {
   try { a.load(); } catch (err) {}
 }, true);
 
+/* 自家仓库媒体（data/ 下的 xmedia 视频、audio 音频、封面，全是英文路径）走 CDN：
+ * 同源 Pages 国内仅 ~12KB/s，视频/音频会卡住；jsdelivr 官方 ~99KB/s、国内镜像 ~280KB/s。
+ * 只处理 data/ 开头——wallpapers/ 是中文文件名，CDN 会 404，必须保持同源相对路径。 */
+const REPO_CDN = 'https://cdn.jsdelivr.net/gh/1yk8u/wallpaper@main/';
+function encodeRepoPath(u) { return encodeURI(u).replace(/#/g, '%23').replace(/\?/g, '%3F'); }
+/* 生成自家仓库媒体的候选地址（快→稳），供 video/audio 出错时逐级回退 */
+function repoMediaCandidates(u) {
+  u = String(u || '');
+  if (/^https?:\/\//i.test(u)) return [u];                 /* 第三方直链原样 */
+  const enc = encodeRepoPath(u.replace(/^\/+/, ''));
+  return [REPO_CDN + enc, 'https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/' + enc, encodeRepoPath(u)];
+}
 function mediaOf(u) {
   u = String(u || '');
   if (/^https?:\/\//i.test(u)) return u;
   /* 相对路径里 # 和 ? 都是 URL 保留字符，会把地址截断成锚点/查询 → 必须%转义 */
-  return encodeURI(u).replace(/#/g, '%23').replace(/\?/g, '%3F');
+  if (/^data\//i.test(u)) return REPO_CDN + encodeRepoPath(u.replace(/^\/+/, ''));
+  return encodeRepoPath(u);
 }
 
 function mediaURL(it) {

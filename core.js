@@ -78,12 +78,18 @@ async function fetchJSONSmart(url, opt) {
 async function fetchBlobSmart(url, opt) {
   opt = opt || {};
   const ms = opt.ms || 60000;
-  try {
-    const resp = await withTimeout(fetch(url), Math.min(ms, 30000), '直连超时');
-    const b = await resp.blob();
-    if (b.size > 0 && !/^\s*(text\/html|application\/json)/i.test(b.type || '')) return b;
-    return null;
-  } catch (e) { return null; }
+  /* 支持候选数组：逐个试，任一拿到合法字节即返回（CDN 官方→镜像→同源）。 */
+  const urls = Array.isArray(url) ? url : [url];
+  for (const u of urls) {
+    if (!u) continue;
+    try {
+      const resp = await withTimeout(fetch(u), Math.min(ms, 30000), '直连超时');
+      if (!resp.ok) continue;
+      const b = await resp.blob();
+      if (b.size > 0 && !/^\s*(text\/html|application\/json)/i.test(b.type || '')) return b;
+    } catch (e) {}
+  }
+  return null;
 }
 
 async function downloadViaBlob(url, filename) {
@@ -114,11 +120,22 @@ async function downloadSmart(url, filename) {
     if (typeof Payment.updateQuotaDisplay === 'function') Payment.updateQuotaDisplay();
   }
   toast('↓️ 开始下载…');
+  /* 自家仓库相对路径（data/ 开头）扩展成多通道候选：
+   * 同源 Pages 国内仅 ~12KB/s 会超时，先试 jsdelivr 官方/国内镜像。 */
+  let urls = url;
+  if (typeof url === 'string' && /^data\//i.test(url)) {
+    const enc = encodeURI(url).replace(/#/g, '%23').replace(/\?/g, '%3F');
+    urls = [
+      'https://cdn.jsdelivr.net/gh/1yk8u/wallpaper@main/' + enc,
+      'https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/' + enc,
+      url,
+    ];
+  }
   try {
-    const ok = await downloadViaBlob(url, filename);
+    const ok = await downloadViaBlob(urls, filename);
     if (ok) { toast('已开始保存', 'ok'); return true; }
   } catch (e) { /* 继续兜底 */ }
-  window.open(url, '_blank', 'noopener');
+  window.open((Array.isArray(urls) ? urls[0] : url), '_blank', 'noopener');
   toast(isIOS
     ? '未自动保存？在打开的页面长按视频/图片 → 存储到手机'
     : '未自动保存？在打开的页面长按或右键另存为', 'warn');

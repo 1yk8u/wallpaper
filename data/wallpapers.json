@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-22T01:53:43.219Z",
+  "updated": "2026-11-23T14:00:00.000Z",
   "items": [
     {
       "id": "w0c491ed40e",
@@ -11167,6 +11167,77 @@
       "date": "2026-10-27T13:17:47.000Z",
       "src": "file",
       "thumb": "thumbs/01-我想一直活在雪季，有你的雪季 #二次元美图 #i（8）.webp"
+    },
+    {
+      "id": "mu6b203a4d72",
+      "name": "au_6b203a4d72fa0886.m4a",
+      "title": "音乐 6b203a4d",
+      "cat": "音乐",
+      "kind": "audio",
+      "gif": false,
+      "url": "data/audio/au_6b203a4d72fa0886.m4a",
+      "playUrl": "data/audio/au_6b203a4d72fa0886.m4a",
+      "size": 2308402,
+      "date": "2026-11-21T00:00:00.000Z",
+      "src": "file",
+      "cover": "data/covers/cv_6b203a4d72fa0886.jpg"
+    },
+    {
+      "id": "mu6b203a4d72",
+      "name": "au_6b203a4d72fa0886.mp3",
+      "title": "Gasolina（何为张力） - Mexlon",
+      "cat": "音乐",
+      "kind": "audio",
+      "gif": false,
+      "url": "data/audio/au_6b203a4d72fa0886.mp3",
+      "playUrl": "data/audio/au_6b203a4d72fa0886.mp3",
+      "size": 2449284,
+      "date": "2026-11-20T13:14:49.261Z",
+      "src": "file",
+      "cover": "data/covers/cv_6b203a4d72fa0886.jpg"
+    },
+    {
+      "id": "mu7ed8b5f29a",
+      "name": "au_7ed8b5f29af13967.mp3",
+      "title": "情非得已 (童声版) - 群星",
+      "cat": "音乐",
+      "kind": "audio",
+      "gif": false,
+      "url": "data/audio/au_7ed8b5f29af13967.mp3",
+      "playUrl": "data/audio/au_7ed8b5f29af13967.mp3",
+      "size": 4276601,
+      "date": "2026-11-15T05:09:26.149Z",
+      "src": "file",
+      "cover": "data/covers/cv_7ed8b5f29af13967.png",
+      "album": "热门华语275"
+    },
+    {
+      "id": "mu9a999ec626",
+      "name": "au_9a999ec6264fbe05.m4a",
+      "title": "Sky Gale（追风调） - DJ余烬Embe",
+      "cat": "音乐",
+      "kind": "audio",
+      "gif": false,
+      "url": "data/audio/au_9a999ec6264fbe05.m4a",
+      "playUrl": "data/audio/au_9a999ec6264fbe05.m4a",
+      "size": 2384234,
+      "date": "2026-11-21T04:49:40.653Z",
+      "src": "file",
+      "cover": "data/covers/cv_9a999ec6264fbe05.jpg"
+    },
+    {
+      "id": "muf46fc2756e",
+      "name": "au_f46fc2756e92f0a4.m4a",
+      "title": "Cryon（带感纯享版） - 遗憾的蘑菇头",
+      "cat": "音乐",
+      "kind": "audio",
+      "gif": false,
+      "url": "data/audio/au_f46fc2756e92f0a4.m4a",
+      "playUrl": "data/audio/au_f46fc2756e92f0a4.m4a",
+      "size": 1440883,
+      "date": "2026-11-20T13:11:37.788Z",
+      "src": "file",
+      "cover": "data/covers/cv_f46fc2756e92f0a4.jpg"
     }
   ]
 }

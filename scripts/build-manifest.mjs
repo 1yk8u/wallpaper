@@ -134,7 +134,68 @@ if (existsSync(linksPath)) {
 }
 
 const files = scan(WALLPAPER_DIR);
-const all = files.concat(links)
+
+/* ===== 音乐条目：直接从 data/audio/ + data/covers/ + 解析缓存生成 =====
+ * 音频的真实字节一直存在 data/audio/au_xxx.ext，而 wallpapers/ 里并没有音频文件
+ * （存库走零字节引用，指向 data/audio）。旧版 build-manifest 只扫 wallpapers/，
+ * 一旦 Actions 重建清单，音乐条目就全部消失，只剩手机 localStorage 旧缓存里的
+ * 默认音符卡片。这里改为扫描 data/audio 并重放解析缓存里的元数据，保证音乐条目
+ * 每次重建都稳定存在，且带 playUrl（CDN 英文路径）和 cover（真实专辑封面）。 */
+function readJSON(path) {
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch (e) { return null; }
+}
+const parseCache = readJSON(join(DATA_DIR, 'parse-cache.json'));
+const cacheEntries = (parseCache && parseCache.entries) || (parseCache && typeof parseCache === 'object' ? parseCache : {});
+/* 用 localAudio 路径反查元数据（title / artist / cover / ts） */
+const audioMeta = new Map();
+for (const [key, v] of Object.entries(cacheEntries)) {
+  if (!v || v.kind !== 'music' || !v.localAudio) continue;
+  const la = String(v.localAudio).replace(/^\/+/, '');
+  audioMeta.set(la, { key, v });
+}
+
+const musicItems = [];
+try {
+  for (const f of readdirSync(AUDIO_DIR)) {
+    if (!/^au_([0-9a-f]{16})\.(mp3|m4a|aac|wav|ogg|opus)$/i.test(f)) continue;
+    const m = /^au_([0-9a-f]{16})\.(mp3|m4a|aac|wav|ogg|opus)$/i.exec(f);
+    const sha = m[1];
+    const full = join(AUDIO_DIR, f);
+    const size = statSync(full).size;
+    const meta = audioMeta.get('data/audio/' + f) || {};
+    const v = meta.v || {};
+    const title = String(v.title || ('音乐 ' + sha.slice(0, 8))).trim();
+    const artist = String(v.artist || '').trim();
+    const displayTitle = artist && !/官方|打开原曲/.test(artist) ? title + ' - ' + artist : title;
+    /* 封面：优先仓库里的 data/covers/cv_<sha>.*（CDN 可用），其次缓存里的 cover */
+    let cover = '';
+    for (const ext of ['jpg', 'png', 'webp']) {
+      if (existsSync(join(DATA_DIR, 'covers', 'cv_' + sha + '.' + ext))) {
+        cover = 'data/covers/cv_' + sha + '.' + ext; break;
+      }
+    }
+    if (!cover && v.cover) cover = String(v.cover);
+    const ts = v.ts ? Math.floor(new Date(v.ts).getTime() / 1000) : (gitTime(full) || Math.floor(statSync(full).mtimeMs / 1000));
+    const item = {
+      id: 'mu' + sha.slice(0, 10),
+      name: f,
+      title: displayTitle,
+      cat: '音乐',
+      kind: 'audio',
+      gif: false,
+      url: 'data/audio/' + f,
+      playUrl: 'data/audio/' + f,
+      size,
+      date: new Date(ts * 1000).toISOString(),
+      src: 'file',
+    };
+    if (cover) item.cover = cover;
+    if (v.album) item.album = String(v.album);
+    musicItems.push(item);
+  }
+} catch (e) { console.error('生成音乐条目失败:', e.message); }
+
+const all = files.concat(links, musicItems)
   .sort((a, b) => new Date(b.date) - new Date(a.date));
 
 const out = { updated: new Date().toISOString(), items: all };

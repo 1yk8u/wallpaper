@@ -70,12 +70,13 @@ function mergeItems(remote, local) {
 }
 /* 清单缓存：数据落 localStorage，下次打开先秒开旧清单，再后台核对更新。
  * 原实现每次都带 ?ts=Date.now() 强刷 588KB，国内网络要卡十几秒。 */
-const MANIFEST_KEY = 'wp_manifest_v6';
+const MANIFEST_KEY = 'wp_manifest_v7';
 /* ?v= 是清单版本号：内容结构变了必须换号，否则 Pages 的 CDN
  * 仍会返回旧清单（比如没有 playUrl / thumb / lqip 字段），手机上就享受不到提速。
  * 20261121B：音乐条目新增 playUrl（英文 CDN 路径），旧版缓存没有它会导致播放走中文慢路径失败。
- * 20261121K：音乐条目新增 cover（封面路径），旧版缓存没有它导致卡片/碟心只显示默认音符。 */
-const MANIFEST_URL = 'data/wallpapers.json?v=20261121K';
+ * 20261121K：音乐条目新增 cover（封面路径），旧版缓存没有它导致卡片/碟心只显示默认音符。
+ * 20261121L：音乐条目改为从 data/audio 生成（不再依赖 wallpapers/ 音频），重建清单后音乐不再消失。 */
+const MANIFEST_URL = 'data/wallpapers.json?v=20261121L';
 function manifestCacheRead() {
   try {
     const j = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null');

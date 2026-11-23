@@ -133,15 +133,32 @@ const Music = (() => {
       failMeta(s, row, noteEl, '无法识别这条分享'); return;
     }
     try {
-      /* ① 先读 2KB 轻量单条结果（api 通道 ~1s），命中即秒出——
-       *    不再为查一首歌先下载 600KB 总缓存，已缓存音乐解析稳在 5 秒内。 */
-      let e = null;
-      if (typeof lightResultGet === 'function') {
-        try { e = flat(await lightResultGet(key, 8000, 0)); } catch (err) {}
+      /* 两路并行竞速，谁先拿到合法结果用谁：
+       * ① 总缓存——首次下完后内存/session 命中，0ms 秒出；
+       * ② 轻量单条 2KB 结果——总缓存没加载过时(~1-2s)顶上。
+       * 旧版只先读轻量结果，即便总缓存已在内存也白等 2-4 秒，且期间显示兜底歌名
+       * 让用户误以为「解析失败」。并行后已缓存歌曲稳定 0-2 秒出真实结果。 */
+      const jobs = [];
+      if (typeof serverCacheGet === 'function') {
+        jobs.push(serverCacheGet(key).then(x => flat(x)).catch(() => null));
       }
-      /* ② 轻量结果没有，再退回总缓存 */
-      if (!good(e) && typeof serverCacheGet === 'function') {
-        try { e = flat(await serverCacheGet(key)) || e; } catch (err) {}
+      if (typeof lightResultGet === 'function') {
+        jobs.push(lightResultGet(key, 6000, 0).then(x => flat(x)).catch(() => null));
+      }
+      let e = null;
+      if (jobs.length) {
+        /* 谁先给出 good 结果就用谁并立即返回；若一路先返回但 non-good，
+         * 继续等其余路；全部 non-good 时取其中信息最全的一份往下走。 */
+        e = await new Promise(resolve => {
+          let settled = false, remain = jobs.length, lastGood = null;
+          jobs.forEach(p => p.then(x => {
+            if (settled) return;
+            if (good(x)) { settled = true; resolve(x); return; }
+            if (x && (!lastGood || Object.keys(x).length > Object.keys(lastGood).length)) lastGood = x;
+            if (--remain === 0) { settled = true; resolve(lastGood); }
+          }).catch(() => { if (--remain === 0 && !settled) { settled = true; resolve(lastGood); } }));
+          setTimeout(() => { if (!settled) { settled = true; resolve(lastGood); } }, 6000);
+        });
       }
       if (!good(e)) {
         /* 旧缓存里只有第三方 audio 直链 → 一律不认，重新让自家仓库抓一遍 */
@@ -393,7 +410,7 @@ const Music = (() => {
         `<audio controls preload="auto" src="${esc(cdnURL(s.localAudio) || s.localAudio)}"></audio>` +
         (s.matched ? '<span class="mu-match">※ 已配同名版本</span>' : '') +
         '<span class="mu-local">本站存档 · 点开即播</span>'
-      : '<span class="mu-noaudio">音源整理中，可先点「打开原曲」</span>';
+      : '<span class="mu-noaudio mu-loading">正在识别歌名与音源…</span>';
     return `<div class="mu-item" style="--mc:${s.color}">
       <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg()}</span></div>
       <div class="mu-info">
@@ -540,6 +557,9 @@ const Music = (() => {
 .mu-media{min-height:32px;border-top:1px dotted var(--line-deep);padding-top:9px}
 .mu-item audio{width:100%;height:34px;display:block}
 .mu-noaudio{font-size:11px;color:var(--dim);display:inline-block;padding:2px 0}
+.mu-loading{color:var(--moss-deep);animation:muPulse 1.1s ease-in-out infinite}
+@keyframes muPulse{0%,100%{opacity:.45}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.mu-loading{animation:none}}
 .mu-pending{font-size:11px;color:var(--moss-deep);display:inline-block;padding:2px 0}
 .mu-match{display:inline-block;margin-top:5px;font-size:10.5px;color:var(--honey);font-family:var(--serif)}
 .mu-local{display:inline-block;margin-top:5px;margin-left:10px;font-size:10.5px;color:var(--moss-deep);font-family:var(--serif)}

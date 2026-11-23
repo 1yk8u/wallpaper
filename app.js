@@ -358,7 +358,10 @@ function thumbHTML(it, i) {
   const dyn = itemDyn(it);
   if (it.kind === 'audio') {
     const cv = coverSrc(it);
-    const cover = cv ? `<img ${la} src="${escAttr(cv)}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
+    /* 音乐卡片很少（几首），封面一律立即加载，绝不受前 4 张懒加载阈值影响——
+     * 否则音乐排在后面时，打开壁纸库看到的是空白封面而非专辑图。 */
+    const audioLoad = 'loading="eager" decoding="async"';
+    const cover = cv ? `<img ${audioLoad} src="${escAttr(cv)}" alt="${esc(it.title || '')}" class="vid-cover"${FADE_ONLOAD}>` : '';
     return `<span class="badge badge-audio">音乐</span><div class="vid-ph audio-ph">${cover}<svg class="vid-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg></div><span class="play-tag play-tag-audio"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg>音频</span>`;
   }
   const badge = `<span class="badge">${dyn ? '动态' : '静态'}</span>`;

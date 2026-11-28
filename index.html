@@ -13,7 +13,7 @@
 <link rel="preload" href="data/hero.json?v=20261117C" as="fetch" crossorigin>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=20261117B">
+<link rel="stylesheet" href="style.css?v=20261128A">
 </head>
 <body>
 
@@ -215,15 +215,65 @@
   </div>
 </div>
 
+<!-- ================= 唱片机音乐播放器 ================= -->
+<div id="modal-player" class="modal hidden">
+  <div class="player-card">
+    <div class="modal-head">
+      <h3>正在播放</h3>
+      <button class="icon-btn" id="pl-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+      </button>
+    </div>
+    <div class="turntable" id="pl-turntable">
+      <div class="vinyl" id="pl-vinyl">
+        <div class="vinyl-label" id="pl-label"></div>
+      </div>
+      <div class="tonearm"><i class="arm-pivot"></i><i class="arm-bar"></i><i class="arm-head"></i></div>
+    </div>
+    <div class="pl-info">
+      <p class="pl-title" id="pl-title">未命名</p>
+      <div class="pl-artist" id="pl-artist">佚名</div>
+      <div class="pl-count" id="pl-count">No.01 / 01</div>
+    </div>
+    <div class="pl-ctrl">
+      <div class="pl-seek-row">
+        <span class="pl-time" id="pl-cur">0:00</span>
+        <input type="range" id="pl-seek" class="pl-seek" min="0" max="1000" value="0" step="1" aria-label="进度">
+        <span class="pl-time" id="pl-dur">0:00</span>
+      </div>
+      <div class="pl-btns">
+        <button class="pl-btn" id="pl-prev" aria-label="上一首">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 6h2.4v12H7z"/><path d="M20 6v12l-9.5-6z"/></svg>
+        </button>
+        <button class="pl-btn pl-play" id="pl-play" aria-label="播放/暂停">
+          <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6L19 12z"/></svg>
+          <svg class="ic-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></svg>
+        </button>
+        <button class="pl-btn" id="pl-next" aria-label="下一首">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.6 6H17v12h-2.4z"/><path d="M4 6v12l9.5-6z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="pl-actions">
+      <button id="pl-download" class="btn ghost">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 20h14"/></svg>
+        下载
+      </button>
+      <button id="pl-lib" class="btn primary">已在壁纸库</button>
+    </div>
+    <audio id="pl-audio" preload="auto"></audio>
+  </div>
+</div>
+
 <noscript><div class="file-banner">本站需要启用 JavaScript 才能使用。</div></noscript>
 
 
 <script src="core.js?v=20261114F"></script>
 <script src="img-accel.js?v=20261117A"></script>
 <script src="player.js?v=20261120A"></script>
-<script src="app.js?v=20261120A"></script>
+<script src="app.js?v=20261128A"></script>
 <script src="extractor.js?v=20261120A"></script>
-<script src="music.js?v=20261128A"></script>
+<script src="music.js?v=20261128B"></script>
 <script src="payment.js?v=20261119A"></script>
 <script>
 /* 缩略图离线缓存：二次打开不必重新下载图片，注册失败也不影响使用 */

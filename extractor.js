@@ -280,7 +280,29 @@ function exResultHTML(r, plat) {
     return raw(s);
   };
   let body = '', total = 0;
-  if (r.kind === 'video') {
+  /* B站番剧/电影剧集：境外代抓拿不到直链时（noPlay），不渲染空播放器，
+   * 改为展示封面 + 剧集信息 + 分集列表 + 试看提示，让用户至少看清这是什么、有哪些集。 */
+  if (r.kind === 'video' && (r.noPlay || !r.play)) {
+    const coverHTML = r.cover ? `<img class="ex-bili-cover" src="${escAttr(muImg(r.cover))}" alt="${esc(r.title || '')}">` : '';
+    const eps = Array.isArray(r.episodes) ? r.episodes : [];
+    const epList = eps.length
+      ? `<div class="ex-bili-eps">` + eps.map((e, i) =>
+          `<div class="ex-bili-ep"><span class="ex-ep-idx">${i + 1}</span><span class="ex-ep-title">${esc(e.title || '正片')}</span>${e.badge ? `<span class="ex-ep-badge">${esc(e.badge)}</span>` : ''}</div>`
+        ).join('') + `</div>`
+      : '';
+    const tip = esc(r.note || '直链受会员或区域限制，完整版需大会员登录；本地解析或境内 IP 通常可拿到试看直链');
+    body = `<div class="ex-bili-meta">
+        ${coverHTML}
+        <div class="ex-bili-info">
+          ${r.seasonTitle ? `<div class="ex-bili-season">${esc(r.seasonTitle)}</div>` : ''}
+          ${r.episodeCount ? `<div class="ex-bili-count">共 ${r.episodeCount} 集</div>` : ''}
+          ${r.preview ? '<div class="ex-bili-preview">试看内容 · 完整版需大会员</div>' : ''}
+        </div>
+      </div>
+      ${epList}
+      <div class="ex-bili-tip">${tip}</div>`;
+    total = 0; /* 没有可存直链，禁止存入 */
+  } else if (r.kind === 'video') {
     total = 1;
     body = `<video class="ex-video" controls playsinline preload="metadata" ${r.cover ? `poster="${escAttr(muImg(r.cover))}"` : ''} src="${escAttr(mu(r.play))}"></video>
       <label class="ex-pickone"><input type="checkbox" class="ex-chk" data-i="0" checked> 把这个视频存进壁纸库</label>`;
@@ -316,8 +338,12 @@ function exResultHTML(r, plat) {
     ${xInfo}
     ${body}
     <div class="ex-actions">
-      <button class="btn primary" id="ex-save">存入壁纸库（${total}）</button>
-      <button class="btn ghost" id="ex-dlall">${r.kind === 'video' ? '下载视频' : '下载全部'}</button>
+      ${total === 0
+        ? '<button class="btn primary" id="ex-save" disabled>无可存直链</button>'
+        : `<button class="btn primary" id="ex-save">存入壁纸库（${total}）</button>`}
+      ${(r.noPlay || !r.play) && r.kind === 'video'
+        ? '' /* 剧集无直链时不显示下载按钮 */
+        : `<button class="btn ghost" id="ex-dlall">${r.kind === 'video' ? '下载视频' : '下载全部'}</button>`}
       <button class="btn ghost" id="ex-open">打开原链接</button>
     </div>
     <div class="hint" id="ex-prog"></div>`;

@@ -265,10 +265,23 @@ function exResultHTML(r, plat) {
   /* 自家仓库里的文件名常带 # / ? / 中文，直接塞进 src 会被当成锚点/查询截断 → 全 404。
    * mediaOf()（app.js）做 encodeURI + %23/%3F 转义，绝对 URL 原样返回。 */
   const mu = (u) => (typeof mediaOf === 'function') ? mediaOf(u) : String(u || '');
+  const raw = mu;
+  /* 第三方图片直链（pbs.twimg / v3-kefu.douyinvod / 小红书 CDN 等）国内大多连不上，
+   * 解析预览会空白。走 images.weserv.nl 开源图片网关中转：只代理 http(s) 外链，
+   * 自家同源相对路径原样返回。注意：网关只用于「预览显示」；「存入壁纸库」仍是服务端抓字节存同源文件。 */
+  const IMG_PROXY = 'https://images.weserv.nl/?url=';
+  const muImg = (u) => {
+    const s = String(u || '');
+    /* 视频/音频直链绝不能进图片网关（按扩展名判断），只有图片才代理 */
+    if (/^https?:\/\//i.test(s) && !/\.(mp4|m4a|mp3|mov|webm)(\?|$)/i.test(s)) {
+      return IMG_PROXY + encodeURIComponent(s.replace(/^http:/, 'https:')) + '&w=800&output=jpg&q=82';
+    }
+    return raw(s);
+  };
   let body = '', total = 0;
   if (r.kind === 'video') {
     total = 1;
-    body = `<video class="ex-video" controls playsinline preload="metadata" ${r.cover ? `poster="${escAttr(mu(r.cover))}"` : ''} src="${escAttr(mu(r.play))}"></video>
+    body = `<video class="ex-video" controls playsinline preload="metadata" ${r.cover ? `poster="${escAttr(muImg(r.cover))}"` : ''} src="${escAttr(mu(r.play))}"></video>
       <label class="ex-pickone"><input type="checkbox" class="ex-chk" data-i="0" checked> 把这个视频存进壁纸库</label>`;
   } else {
     const imgs = (r.images || []).slice(0, 30);
@@ -281,14 +294,14 @@ function exResultHTML(r, plat) {
       </div>
       <div class="ex-imggrid">` + imgs.map((u, i) =>
         `<div class="iw sel"><label class="iw-pick"><input type="checkbox" class="ex-chk" data-i="${i}" checked></label>
-           <img loading="lazy" src="${escAttr(mu(u))}" alt=""><button class="dl" data-i="${i}" title="下载这张">↓</button></div>`
+           <img loading="lazy" src="${escAttr(muImg(u))}" alt=""><button class="dl" data-i="${i}" title="下载这张">↓</button></div>`
       ).join('') + `</div>`;
   }
   const cnt = r.kind === 'video' ? '视频' : ((r.images || []).length + ' 张图');
   /* X 结果：作者头像 / @账号 / 推文正文 / 专用通道标识，全部来自自家仓库同源文件 */
   const isX = r.channel === 'x-only' || (plat && plat.channel === 'x-only');
   const xInfo = isX ? `<div class="ex-xinfo">
-      ${r.xAvatar ? `<img class="ex-xavatar" src="${escAttr(mu(r.xAvatar))}" alt="">` : '<span class="ex-xavatar ex-xavatar-ph">𝕏</span>'}
+      ${r.xAvatar ? `<img class="ex-xavatar" src="${escAttr(muImg(r.xAvatar))}" alt="">` : '<span class="ex-xavatar ex-xavatar-ph">𝕏</span>'}
       <div class="ex-xmeta">
         <div class="ex-xauthor">${esc(r.xAuthor || (r.xHandle ? '@' + r.xHandle : 'X 用户'))}${r.xHandle && r.xAuthor ? ' <span>@' + esc(r.xHandle) + '</span>' : ''}</div>
         ${r.xText ? `<div class="ex-xtext">${esc(r.xText)}</div>` : ''}

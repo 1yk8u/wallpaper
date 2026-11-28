@@ -920,6 +920,8 @@ function initAdmin() {
     catch (e) { toast('删除失败：' + (e.message || e), 'bad'); }
     finally { dOk.disabled = false; }
   });
+  /* 供 payment.js 判断是否显示「管理支付订单」入口 */
+  window.__wpIsAdmin = () => isAdmin;
   window.__wpAskDelete = (it) => {
     pending = it;
     const m = $id('del-msg');

@@ -9,9 +9,11 @@
 <!-- 引擎加速①：提前建立各图片通道的连接，省掉几十~几百 ms 握手 -->
 <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<!-- 引擎加速②：HTML 一解析就开始下首屏小清单 -->
+<link rel="preload" href="data/hero.json?v=20261117C" as="fetch" crossorigin>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=20261121G">
+<link rel="stylesheet" href="style.css?v=20261117B">
 </head>
 <body>
 
@@ -134,7 +136,6 @@
         <button id="mu-paste" class="btn primary big">快捷粘贴 · 自动解析</button>
         <button id="mu-go" class="btn ghost big">解析</button>
         <button id="mu-test" class="btn ghost big">双平台自测</button>
-        <button id="mu-clear" class="btn danger big" type="button">清空</button>
       </div>
       <div id="mu-result" class="mu-result hidden"></div>
       <p class="fine">点上方平台图标可填入示例链接（汽水那条就是你发的《Gasolina》分享口令）；点「双平台自测」一次跑完两家，给出识别 + 同源音频 + 自家缓存三项结果。汽水优先官方原版音频（M4A），网易云为官方试听（MP3）；歌名 / 歌手 / 封面 / 音频全部存到本站自己的仓库，播放和下载走本站同源文件（流式秒开，不用等整首下完），只有「存到壁纸库」才取字节转本地文件，汽水和网易云都不走第三方直连。首次解析要等自家仓库抓一次（约半分钟），之后同源缓存秒出。版权归原平台及权利人，仅个人试听收藏。</p>
@@ -178,65 +179,6 @@
   </div>
 </div>
 
-<!-- ================= 唱片机播放器（点击壁纸库里的音乐打开） ================= -->
-<div id="modal-player" class="modal hidden">
-  <div class="modal-card player-card">
-    <div class="player-top">
-      <div class="player-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg></div>
-      <div class="player-top-txt"><span class="player-kicker">留声集 · 试听</span><span class="player-count" id="pl-count">No.01 / 01</span></div>
-      <button class="icon-btn" id="pl-close" aria-label="关闭播放器">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
-      </button>
-    </div>
-
-    <div class="turntable" id="pl-turntable">
-      <div class="tonearm" id="pl-tonearm"><span class="tonearm-pivot"></span><span class="tonearm-needle"></span></div>
-      <div class="vinyl" id="pl-vinyl">
-        <div class="vinyl-grooves"></div>
-        <div class="vinyl-label" id="pl-label"><span class="vinyl-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg></span></div>
-        <div class="vinyl-hole"></div>
-      </div>
-    </div>
-
-    <div class="player-song">
-      <div class="player-title" id="pl-title">—</div>
-      <div class="player-artist" id="pl-artist"></div>
-    </div>
-
-    <div class="player-progress">
-      <input type="range" id="pl-seek" class="player-seek" min="0" max="1000" value="0" aria-label="播放进度">
-      <div class="player-time"><span id="pl-cur">0:00</span><span id="pl-dur">0:00</span></div>
-    </div>
-
-    <div class="player-ctrls">
-      <button class="pl-btn" id="pl-prev" aria-label="上一首" title="上一首">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 6v12M19 6l-9 6 9 6z"/></svg>
-      </button>
-      <button class="pl-btn pl-play" id="pl-play" aria-label="播放/暂停" title="播放/暂停">
-        <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l10-6.5z"/></svg>
-        <svg class="ic-pause" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5.5h3.2v13H7zM13.8 5.5H17v13h-3.2z"/></svg>
-      </button>
-      <button class="pl-btn" id="pl-next" aria-label="下一首" title="下一首">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 6v12M5 6l9 6-9 6z"/></svg>
-      </button>
-    </div>
-
-    <div class="player-swipe-hint">← 左右滑动切歌 · 点封面暂停 →</div>
-
-    <div class="player-actions">
-      <button class="btn ghost" id="pl-download">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 20h14"/></svg>
-        下载
-      </button>
-      <button class="btn ghost" id="pl-lib">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v13H4z"/><path d="M4 9.5h16"/></svg>
-        存壁纸库
-      </button>
-    </div>
-    <audio id="pl-audio" preload="auto"></audio>
-  </div>
-</div>
-
 <!-- ================= 管理模式密码弹窗（图标连点 5 下触发） ================= -->
 <div id="modal-admin" class="modal hidden">
   <div class="modal-card danger-card">
@@ -276,11 +218,20 @@
 <noscript><div class="file-banner">本站需要启用 JavaScript 才能使用。</div></noscript>
 
 
-<script src="core.js?v=20261121H"></script>
-<script src="img-accel.js?v=20261120E"></script>
-<script src="app.js?v=20261121M"></script>
-<script src="extractor.js?v=20261121H"></script>
-<script src="music.js?v=20261121L"></script>
-<script src="payment.js?v=20261120E"></script>
+<script src="core.js?v=20261114F"></script>
+<script src="img-accel.js?v=20261117A"></script>
+<script src="player.js?v=20261120A"></script>
+<script src="app.js?v=20261120A"></script>
+<script src="extractor.js?v=20261120A"></script>
+<script src="music.js?v=20261128A"></script>
+<script src="payment.js?v=20261119A"></script>
+<script>
+/* 缩略图离线缓存：二次打开不必重新下载图片，注册失败也不影响使用 */
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js', { scope: './' }).catch(function () {});
+  });
+}
+</script>
 </body>
 </html>

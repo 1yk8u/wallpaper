@@ -782,22 +782,71 @@ async function ghDeleteFile(path, sha) {
   return gh('/contents/' + encodeAPIPath(path), { method: 'DELETE', body: JSON.stringify(body) });
 }
 
-/* 删除一张壁纸：文件 + 可能的封面文件 */
+/* 删除一份资源：真实文件彻底删除，不备份、不进回收站，且不会重建复活。
+ * 覆盖：壁纸 wallpapers/、音乐 data/audio/、封面 data/covers/、缩略图 thumbs/。
+ * 音乐还要删 data/parse-cache.json 里的条目，否则重建清单时会按 sha 复活。 */
 async function deleteWallpaper(it) {
   if (!it) return;
+
+  /* 1) 收集要删的真实文件（只认本站仓库内的路径） */
   const files = [];
-  if (it.url) files.push(String(it.url).replace(/^\/?/, ''));
-  if (it.cover) files.push(String(it.cover).replace(/^\/?/, ''));
-  const uniqFiles = [...new Set(files.filter(p => p.startsWith('wallpapers/')))];
+  ['url', 'playUrl', 'cover', 'localAudio', 'thumb'].forEach(k => {
+    if (it[k]) files.push(String(it[k]).replace(/^\/?/, ''));
+  });
+  const safe = p => /^(wallpapers|thumbs|data\/audio|data\/covers)\//.test(p);
+  const uniqFiles = [...new Set(files.filter(safe))];
   for (const p of uniqFiles) await ghDeleteFile(p);
 
-  /* 从本机兜底里也删掉，避免刷新后又冒出来 */
+  /* 2) 音乐：从解析缓存里抹掉该音频 sha 的所有条目，杜绝重建时复活 */
   try {
-    const cur = localItemsRead().filter(x => x.url !== it.url);
+    const cpath = 'data/parse-cache.json';
+    const cur = await gh('/contents/' + encodeAPIPath(cpath) + '?ref=' + encodeURIComponent(CFG.branch));
+    if (cur && cur.content) {
+      const json = JSON.parse(decodeURIComponent(escape(atob(cur.content.replace(/\s/g, '')))));
+      const sha = (String(it.localAudio || it.url || it.playUrl || '').match(/au_([0-9a-f]{16})\./i) || [])[1] || '';
+      let changed = false;
+      if (sha) {
+        for (const [k, v] of Object.entries(json.entries || {})) {
+          if (v && /au_([0-9a-f]{16})\./i.test(String(v.localAudio || '')) &&
+              String(v.localAudio).indexOf(sha) >= 0) {
+            delete json.entries[k]; changed = true;
+          }
+        }
+      }
+      if (changed) {
+        await gh('/contents/' + encodeAPIPath(cpath), {
+          method: 'PUT',
+          body: JSON.stringify({
+            message: '彻底删除 ' + (it.title || '资源') + '：抹除解析缓存',
+            content: btoa(unescape(encodeURIComponent(JSON.stringify(json)))),
+            sha: cur.sha,
+            branch: CFG.branch,
+          }),
+        });
+      }
+    }
+  } catch (e) { /* 缓存不存在或已删，忽略 */ }
+
+  /* 3) 本机兜底里也删掉，避免刷新后又冒出来 */
+  try {
+    const cur = localItemsRead().filter(x => x.url !== it.url && x.id !== it.id);
     localStorage.setItem(LOCAL_ITEMS_KEY, JSON.stringify(cur));
   } catch (e) {}
 
-  /* 前端即时移除 + 重绘（清单重建由仓库 Actions 异步完成） */
+  /* 4) 清掉 Service Worker 里这张图/音频的旧缓存，防止离线缓存让它复活 */
+  try {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      for (const k of keys) {
+        const c = await caches.open(k);
+        for (const p of uniqFiles) {
+          try { await c.delete(new URL(p, location.href).href); } catch (e) {}
+        }
+      }
+    }
+  } catch (e) {}
+
+  /* 5) 前端即时移除 + 重绘（清单重建由仓库 Actions 异步完成） */
   allItems = allItems.filter(x => x !== it && x.url !== it.url);
   if (curDetail && curDetail.url === it.url) closeModal('modal-detail');
   renderAll();
@@ -806,7 +855,7 @@ async function deleteWallpaper(it) {
     await fetch('https://api.github.com/repos/' + encodeURIComponent(CFG.owner) + '/' + encodeURIComponent(CFG.repo) + '/dispatches', {
       method: 'POST',
       headers: { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + CFG.pat },
-      body: JSON.stringify({ event_type: 'rebuild-manifest', client_payload: { reason: 'admin-delete' } }),
+      body: JSON.stringify({ event_type: 'rebuild-manifest', client_payload: { reason: 'admin-delete', path: uniqFiles[0] || '' } }),
     });
   } catch (e) {}
 }

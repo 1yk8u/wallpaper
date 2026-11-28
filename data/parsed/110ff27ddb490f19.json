@@ -1,10 +1,17 @@
 {
   "key": "b23.tv/ep8012073",
-  "ok": false,
-  "error": {
-    "code": "RISK",
-    "message": "PGC playurl 没给直链（会员内容可能仅登录可看）。已拿到封面/标题/分集，会员完整版需大会员登录"
+  "ok": true,
+  "data": {
+    "kind": "video",
+    "images": [],
+    "play": "",
+    "cover": "https://i0.hdslb.com/bfs/bangumi/image/fedd4cf85dcbf6f96dae42af418ec8662bbba72f.png",
+    "title": "欢迎来龙餐馆",
+    "via": "bilibili-pgc-meta-only",
+    "platform": "bilibili",
+    "platformName": "哔哩哔哩",
+    "ts": "2026-11-28T12:58:49.467Z"
   },
   "engine": "1.2.0",
-  "ts": "2026-11-28T12:54:32.301Z"
+  "ts": "2026-11-28T12:58:49.467Z"
 }

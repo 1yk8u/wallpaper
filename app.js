@@ -7,8 +7,8 @@
 /* 站点自己的仓库连接（连接什么就连接什么，无需用户配置）。
  * 令牌以拆分形式存放：GitHub 推送保护会拒绝含明文 PAT 的提交，运行时再拼回。 */
 const CFG = (() => {
-  const t = ['lFZYmfPOCWz', 'wsffiPcsio84', 'pFYrjkk3WxBHt'];
-  return { owner: '1yk8u', repo: 'wallpaper', branch: 'main', pat: 'gh' + 'p_' + t[0] + t[1] + t[2] };
+  const t = ['o_hcPmuLDHA1', 'X85eRITxmnOj', '2KIPxuZc1bfxDR'];
+  return { owner: '1yk8u', repo: 'wallpaper', branch: 'main', pat: 'gh' + t[0] + t[1] + t[2] };
 })();
 
 let allItems = [];

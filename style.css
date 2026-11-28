@@ -586,3 +586,18 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);transition:background-
 .pl-play.playing .ic-pause{display:block}
 .pl-actions{display:flex;gap:9px;justify-content:center;margin-top:18px}
 #pl-audio{display:none}
+
+/* B站番剧/电影剧集解析结果（无直链时的元数据展示） */
+.ex-bili-meta{display:flex;gap:14px;align-items:flex-start;margin-top:12px}
+.ex-bili-cover{width:120px;flex:none;border-radius:6px;box-shadow:0 2px 10px rgba(60,36,14,.25);background:var(--line)}
+.ex-bili-info{flex:1;min-width:0}
+.ex-bili-season{font-family:var(--serif);font-size:16px;font-weight:700;color:var(--ink);margin-bottom:6px}
+.ex-bili-count{font-size:12.5px;color:var(--ink-2);margin-bottom:6px}
+.ex-bili-preview{display:inline-block;font-size:11.5px;color:#fff6e2;background:var(--wood);border-radius:4px;padding:2px 8px}
+.ex-bili-eps{margin-top:12px;border:1px solid var(--line-deep);border-radius:6px;overflow:hidden}
+.ex-bili-ep{display:flex;align-items:center;gap:10px;padding:7px 11px;border-bottom:1px solid var(--line);font-size:12.5px}
+.ex-bili-ep:last-child{border-bottom:none}
+.ex-ep-idx{color:var(--dim);font-variant-numeric:tabular-nums;min-width:20px}
+.ex-ep-title{flex:1;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ex-ep-badge{font-size:11px;color:var(--ink-2);background:var(--line);border-radius:3px;padding:1px 6px}
+.ex-bili-tip{margin-top:10px;font-size:12px;color:var(--dim);line-height:1.7;background:var(--paper);border-left:3px solid var(--wood);padding:8px 11px;border-radius:0 4px 4px 0}

@@ -3,26 +3,28 @@
 #   /.netlify/functions/pay    支付下单 / 回调 / 到账查询
 #   /.netlify/functions/music  网易云 / QQ音乐 / 酷狗 / 汽水音乐 分享链接解析
 #   /.netlify/functions/api    解析引擎 / 跨域代理
-# 图片与解析数据透明代理到 GitHub 仓库（永远最新）
+# 图片与解析数据透明代理到 GitHub 仓库（走国内 CDN，刷新及时）
+# 注意：raw.githubusercontent.com 的 CDN 缓存会卡在几小时前的旧清单（重复 ID、
+# 新壁纸看不到），jsdmirror 跟 main 分支同步快且国内 0.2s 首包，故统一改用镜像。
 
-# ===== 代理 data/（解析结果、缓存、订单）→ GitHub raw =====
+# ===== 代理 data/（解析结果、缓存、订单）→ CDN 镜像 =====
 [[redirects]]
   from = "/data/*"
-  to = "https://raw.githubusercontent.com/1yk8u/wallpaper/main/data/:splat"
+  to = "https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/data/:splat"
   status = 200
   force = true
 
-# ===== 代理 thumbs/（缩略图）→ GitHub raw =====
+# ===== 代理 thumbs/（缩略图）→ CDN 镜像 =====
 [[redirects]]
   from = "/thumbs/*"
-  to = "https://raw.githubusercontent.com/1yk8u/wallpaper/main/thumbs/:splat"
+  to = "https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/thumbs/:splat"
   status = 200
   force = true
 
-# ===== 代理 wallpapers/（壁纸大图）→ GitHub raw =====
+# ===== 代理 wallpapers/（壁纸大图）→ CDN 镜像 =====
 [[redirects]]
   from = "/wallpapers/*"
-  to = "https://raw.githubusercontent.com/1yk8u/wallpaper/main/wallpapers/:splat"
+  to = "https://cdn.jsdmirror.com/gh/1yk8u/wallpaper@main/wallpapers/:splat"
   status = 200
   force = true
 

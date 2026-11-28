@@ -16,19 +16,34 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/* B站指纹池：每天由 bili-fingerprint.mjs 定时刷新到 data/bili-fingerprints.json。
- * 带新鲜指纹的 CDN 直链请求实测可从 403 → 200；这里轮换读取，避免同一套被反复用。 */
+/* B站指纹池：带新鲜指纹的 CDN 直链请求实测可从 403 → 200。
+ * 池子存 data/bili-fingerprints.json，由 bili-fingerprint.mjs 每天定时刷新；
+ * 若某天 workflow 没跑起来，这里会在池子过期时异步「自动补货」，保证始终新鲜。 */
 const __DIR = path.dirname(fileURLToPath(import.meta.url));
 const BILI_FP_PATH = path.resolve(__DIR, '..', 'data', 'bili-fingerprints.json');
+const FP_MAX_AGE = 18 * 3600 * 1000;   // 超过 18 小时视为过期
+
+function readPool() {
+  try { const j = JSON.parse(fs.readFileSync(BILI_FP_PATH, 'utf8')); return j && Array.isArray(j.fingerprints) ? j : null; }
+  catch (e) { return null; }
+}
 function poolCookie() {
-  try {
-    const j = JSON.parse(fs.readFileSync(BILI_FP_PATH, 'utf8'));
-    const arr = (j.fingerprints || []).filter(x => x && x.cookie && /buvid3=/.test(x.cookie));
-    if (!arr.length) return '';
-    /* 用时间戳做轮换索引，每次解析换一套；同一次进程内也用计数错开 */
-    const idx = (Date.now() + (poolCookie._n = (poolCookie._n || 0) + 1)) % arr.length;
-    return arr[idx].cookie;
-  } catch (e) { return ''; }
+  const j = readPool();
+  const arr = ((j && j.fingerprints) || []).filter(x => x && x.cookie && /buvid3=/.test(x.cookie));
+  /* 池子过期或不足 → 后台异步补货（不阻塞本次解析，下次生效）。
+   * GitHub Actions 的提交步骤会把写回的池子文件一起提交。 */
+  const stale = !j || !j.updated || (Date.now() - new Date(j.updated).getTime() > FP_MAX_AGE) || arr.length < 4;
+  if (stale && !globalThis.__biliFpRestocking) {
+    globalThis.__biliFpRestocking = true;
+    import('./bili-fingerprint.mjs')
+      .then(m => m.restock && m.restock())
+      .catch(() => {})
+      .finally(() => { globalThis.__biliFpRestocking = false; });
+  }
+  if (!arr.length) return '';
+  /* 用时间戳做轮换索引，每次解析换一套；同一次进程内也用计数错开 */
+  const idx = (Date.now() + (poolCookie._n = (poolCookie._n || 0) + 1)) % arr.length;
+  return arr[idx].cookie;
 }
 
 export const ENGINE_VERSION = '1.0.0';

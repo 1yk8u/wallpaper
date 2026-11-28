@@ -146,11 +146,12 @@ function audioCDNSrc(it) {
   return AUDIO_CDN_MIRROR + p;
 }
 
-/* 音频候选地址：按「快→稳」排序，onerror 时依次尝试，只要有一条通就能播。
- * ① jsdelivr 国内镜像 jsdmirror（国内实测最快最稳，~330KB/s）
- * ② jsdelivr 官方 CDN（英文路径，备用；部分国内网络会 301/403 → 触发回退）
- * ③ 同源 Pages 英文路径（慢一点但几乎总能通）
- * ④ 同源 Pages 原始路径（中文名兜底） */
+/* 音频候选地址：按实测速度「快→稳」排序，onerror/卡顿时依次尝试，只要有一条通就能播。
+ * 2026-11-28 实测 256KB Range 首包耗时：jsdmirror 0.21s / raw.githubusercontent 0.47s /
+ * 官方 jsdelivr 3.16s / fastly 2.96s / gcore 6.29s。故把 raw 提到官方 CDN 前面，
+ * 官方 CDN 慢且常 301/403，降级为兜底。全部支持 Range 206，拖动/续传不会断。
+ * ① jsdmirror 国内镜像  ② raw.githubusercontent  ③ 官方 jsdelivr
+ * ④ 同源 Pages 英文  ⑤ 同源 Pages 原始路径（中文名兜底） */
 function absURL(p) { try { return new URL(String(p), location.href).href; } catch (e) { return String(p); } }
 function audioCandidateURLs(it) {
   if (!it) return [];
@@ -158,11 +159,12 @@ function audioCandidateURLs(it) {
   const p = String(it.playUrl || '').replace(/^\/+/, '');
   const valid = /^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i.test(p);
   if (valid) {
-    out.push(AUDIO_CDN_MIRROR + p); /* ① 国内镜像（最快最稳） */
-    out.push(AUDIO_CDN + p);        /* ② 官方 CDN */
-    out.push(absURL(p));            /* ③ 同源英文 */
+    out.push(AUDIO_CDN_MIRROR + p);  /* ① 国内镜像（最快） */
+    out.push('https://raw.githubusercontent.com/1yk8u/wallpaper/main/' + p); /* ② raw（次快，稳） */
+    out.push(AUDIO_CDN + p);         /* ③ 官方 CDN（慢，兜底） */
+    out.push(absURL(p));             /* ④ 同源英文 */
   }
-  if (it.url) out.push(absURL(mediaOf(it.url)));  /* ④ 同源原始 */
+  if (it.url) out.push(absURL(mediaOf(it.url)));  /* ⑤ 同源原始 */
   return out.filter((u, i, a) => u && a.indexOf(u) === i);   /* 去重 */
 }
 function audioFirstSrc(it) {
@@ -930,6 +932,11 @@ const Player = (() => {
       audio.addEventListener('ended', () => step(1));
       /* 多通道回退：某一路加载失败，按候选列表依次换源 */
       audio.addEventListener('error', onSourceError);
+      /* 卡顿自救：网络抖动导致 stalled/waiting 时延时换更稳的通道，恢复播放后清零 */
+      audio.addEventListener('stalled', onStalled);
+      audio.addEventListener('waiting', onStalled);
+      audio.addEventListener('playing', onPlaying);
+      audio.addEventListener('canplay', onPlaying);
     }
 
     /* 左右滑动切歌（在唱盘区域） */
@@ -958,7 +965,7 @@ const Player = (() => {
     });
   }
 
-  let srcTry = 0;
+  let srcTry = 0, prefetchEl = null, stalledTimer = null, stalledRetries = 0;
   function loadCurrent(autoplay) {
     const it = queue[idx];
     if (!it || !audio) return;
@@ -972,6 +979,7 @@ const Player = (() => {
     if (durEl) durEl.textContent = '0:00';
     if (seek) seek.value = 0;
     /* 多通道候选 */
+    stalledRetries = 0; clearTimeout(stalledTimer);
     srcTry = 0;
     const cands = (typeof audioCandidateURLs === 'function') ? audioCandidateURLs(it) : [mediaURL(it)];
     audio._cands = cands.length ? cands : [mediaURL(it)];
@@ -980,12 +988,37 @@ const Player = (() => {
       const p = audio.play();
       if (p && p.catch) p.catch(() => {});
     }
+    prefetchNext();
   }
-  function trySetSource(n) {
+  /* 预加载下一首到独立 audio：切歌时字节已在缓存，点「下一首」几乎无等待。
+   * 只预取最快那一路（jsdmirror），且只 preload=metadata 起步，省流量。 */
+  function prefetchNext() {
+    try {
+      const nx = queue[(idx + 1) % queue.length];
+      if (!nx || nx === queue[idx]) return;
+      const c0 = (typeof audioFirstSrc === 'function') ? audioFirstSrc(nx) : mediaURL(nx);
+      if (!c0) return;
+      if (!prefetchEl) { prefetchEl = document.createElement('audio'); prefetchEl.preload = 'auto'; }
+      prefetchEl.src = c0;
+      try { prefetchEl.load(); } catch (e) {}
+    } catch (e) {}
+  }
+  function trySetSource(n, keepTime) {
     if (!audio || !audio._cands) return;
+    const at = keepTime ? audio.currentTime : 0;
+    const wasPlaying = keepTime && !audio.paused;
     srcTry = n;
     if (n >= audio._cands.length) return;
     try { audio.src = audio._cands[n]; audio.load(); } catch (e) {}
+    /* 换源后把进度接回去、继续播，避免「切通道=歌曲从头」，听感上就是不断歌 */
+    if (keepTime && at > 0) {
+      const restore = () => {
+        audio.removeEventListener('loadedmetadata', restore);
+        try { audio.currentTime = at; } catch (e) {}
+        if (wasPlaying) { const p = audio.play(); if (p && p.catch) p.catch(() => {}); }
+      };
+      audio.addEventListener('loadedmetadata', restore);
+    }
   }
   /* 封面多通道：国内镜像→同源→官方 CDN。逐个 new Image 试，第一个 onload 的贴上，
    * 避免单一官方 CDN 301/未同步导致碟心空白。 */
@@ -1011,8 +1044,25 @@ const Player = (() => {
   }
   function onSourceError() {
     if (!audio || !audio._cands) return;
-    if (srcTry < audio._cands.length - 1) trySetSource(srcTry + 1);
+    if (srcTry < audio._cands.length - 1) trySetSource(srcTry + 1, true);
   }
+  /* 网络抖动卡住（stalled/waiting）时先等一小会；真卡死则切下一条更稳的源，
+   * 并把进度接回去，避免「播放中突然断掉」。 */
+  function onStalled() {
+    if (!audio || audio.paused || !audio._cands) return;
+    clearTimeout(stalledTimer);
+    stalledTimer = setTimeout(() => {
+      if (!audio || audio.paused || audio.readyState >= 3) return;   // 已恢复
+      if (srcTry < audio._cands.length - 1) {
+        stalledRetries++;
+        trySetSource(srcTry + 1, true);
+      } else if (stalledRetries === 0) {
+        stalledRetries = 1;
+        try { audio.load(); const p = audio.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+      }
+    }, 4000);
+  }
+  function onPlaying() { clearTimeout(stalledTimer); stalledRetries = 0; }
 
   function togglePlay() {
     if (!audio) return;
@@ -1035,6 +1085,9 @@ const Player = (() => {
   }
   function close() {
     if (audio) { try { audio.pause(); } catch (e) {} }
+    clearTimeout(stalledTimer);
+    /* 释放预加载的下一首，避免后台持续占用带宽 */
+    if (prefetchEl) { try { prefetchEl.pause(); prefetchEl.removeAttribute('src'); prefetchEl.load(); } catch (e) {} }
     if (table) table.classList.remove('spinning');
     if (playBtn) playBtn.classList.remove('playing');
     closeModal('modal-player');

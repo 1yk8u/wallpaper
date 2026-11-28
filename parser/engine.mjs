@@ -560,11 +560,14 @@ async function biliCookie() {
   } catch (e) { return ''; }
 }
 
-/* ---- B 站：官方公开接口，自己组装与解析 ---- */
+/* ---- B 站：官方公开接口，自己组装与解析 ---- *
+ * 支持三类链接：
+ *   1) 普通视频  BV号 / av号        → x/web-interface/view + x/player/playurl
+ *   2) 番剧/电影剧集 ep号（b23.tv/ep123 → /bangumi/play/ep123）
+ *   3) 整季 ss号（season_id）        → PGC season 接口
+ * ep/ss 走 PGC 接口，会员内容只返回试看（is_preview=1），会在结果里标注 preview=true。
+ * 两类链接都带指纹池 cookie，实测可把 CDN 直链的 403 变成 200。 */
 async function parseBilibili(url) {
-  const bv = (url.match(/BV[0-9A-Za-z]{10}/) || [])[0] || '';
-  const aid = (url.match(/\/av(\d{4,})/i) || url.match(/[?&]aid=(\d+)/) || [])[1] || '';
-  if (!bv && !aid) fail('STRUCT', '没识别出 BV 号 / av 号，请粘贴完整视频页链接');
   const H = {
     referer: 'https://www.bilibili.com/', origin: 'https://www.bilibili.com',
     accept: 'application/json, text/plain, */*',
@@ -572,6 +575,67 @@ async function parseBilibili(url) {
   };
   const ck = await biliCookie();
   if (ck) H.cookie = ck;
+
+  /* ============ 分支 A：番剧 / 电影剧集（ep 号 / ss 号） ============ */
+  const epId = (url.match(/\/ep(\d{4,})/i) || url.match(/[?&]ep_id=(\d+)/) || [])[1] || '';
+  const ssId = (url.match(/\/ss(\d{4,})/i) || url.match(/[?&]season_id=(\d+)/) || [])[1] || '';
+  if (epId || ssId) {
+    // 先拿整季元数据（标题、封面、分集列表）
+    const seasonKey = epId ? 'ep_id=' + epId : 'season_id=' + ssId;
+    const sr = await httpGet('https://api.bilibili.com/pgc/view/web/season?' + seasonKey,
+      { headers: H, timeout: 20000 });
+    let sj = null;
+    try { sj = await sr.json(); } catch (e) { /* fallthrough */ }
+    if (!sj || sj.code !== 0 || !sj.result)
+      fail('RISK', 'PGC 番剧接口返回 code ' + (sj && sj.code) + '（' + (sj && sj.message || '风控/需登录') +
+        '）。境外服务器 IP 常被拦，建议本地解析');
+    const s = sj.result;
+    const eps = Array.isArray(s.episodes) ? s.episodes : [];
+    let target = eps.find(e => String(e.id) === String(epId)) || null;
+    if (!target && ssId && eps.length) target = eps[0];
+    if (!target && epId) target = { id: Number(epId), cid: 0, bvid: '' };
+
+    // 分集列表：给前端展示用（标题 + ep id + 是否可看）
+    const episodes = eps.map(e => ({
+      epId: e.id, cid: e.cid, bvid: e.bvid || '', title: String(e.long_title || e.title || '正片').slice(0, 80),
+      cover: e.cover || '', badge: e.badge || '',
+    })).slice(0, 300);
+
+    const cover = (target && target.cover) || s.cover || '';
+    const seasonTitle = String(s.season_title || s.title || '番剧').slice(0, 100);
+    const epTitle = target && (target.long_title || target.title);
+    const title = epTitle && epTitle !== '正片'
+      ? seasonTitle + ' · ' + String(epTitle).slice(0, 60) : seasonTitle;
+
+    // 用 PGC playurl 拿直链：优先 ep_id，其次 bvid+cid
+    let found = null;
+    for (const qn of [80, 64, 32, 16]) {
+      let q = 'ep_id=' + (target.id || epId) + '&qn=' + qn + '&fnval=0&platform=html5';
+      if (!target.id && target.bvid && target.cid)
+        q = 'bvid=' + target.bvid + '&cid=' + target.cid + '&qn=' + qn + '&fnval=0&platform=html5';
+      const pr = await httpGet('https://api.bilibili.com/pgc/player/web/playurl?' + q,
+        { headers: H, timeout: 20000 });
+      let p = null;
+      try { p = await pr.json(); } catch (e) { continue; }
+      const durl = p && p.result && p.result.durl && p.result.durl[0];
+      if (p && p.code === 0 && durl && durl.url) { found = { p, durl, qn }; break; }
+    }
+    if (!found)
+      fail('RISK', 'PGC playurl 没给直链（会员内容可能仅登录可看）。已拿到封面/标题/分集，会员完整版需大会员登录');
+
+    return {
+      kind: 'video', images: [], play: found.durl.url, cover, title,
+      size: found.durl.size || 0,
+      preview: !!(found.p.result && found.p.result.is_preview),
+      episodes, seasonTitle, episodeCount: eps.length,
+      via: 'bilibili-pgc-episode-qn' + found.qn,
+    };
+  }
+
+  /* ============ 分支 B：普通视频（BV 号 / av 号） ============ */
+  const bv = (url.match(/BV[0-9A-Za-z]{10}/) || [])[0] || '';
+  const aid = (url.match(/\/av(\d{4,})/i) || url.match(/[?&]aid=(\d+)/) || [])[1] || '';
+  if (!bv && !aid) fail('STRUCT', '没识别出 BV 号 / av 号 / ep 号，请粘贴完整视频页链接');
   const vr = await httpGet('https://api.bilibili.com/x/web-interface/view?' + (bv ? 'bvid=' + bv : 'aid=' + aid),
     { headers: H, timeout: 20000 });
   let v = null;

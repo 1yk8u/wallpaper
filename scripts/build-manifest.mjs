@@ -71,7 +71,10 @@ function scan(dir) {
     const dot = f.name.lastIndexOf('.');
     const baseKey = (dot > 0 ? f.name.slice(0, dot) : f.name).toLowerCase();
     const coverFull = covers.get(baseKey);
-    let id = gitBlobId(f.full) || createHash('sha1').update(readFileSync(f.full)).digest('hex').slice(0, 10);
+    /* id 必须全局唯一：gitBlobId 只按内容算 sha，同一张图存成两份不同文件名的
+     * 壁纸会得到相同 id → 详情页/删除张冠李戴。混入相对路径后再取 sha。 */
+    let id = createHash('sha1').update(rel).digest('hex').slice(0, 10)
+      || gitBlobId(f.full);
     const ts = gitTime(f.full) || Math.floor((statSync(f.full).mtimeMs || Date.now()) / 1000);
 /* 品类自动归类：标题关键词 → 分类（首个命中即定） */
 const CAT_RULES = [
@@ -219,7 +222,18 @@ try {
   }
 } catch (e) { console.error('生成音乐条目失败:', e.message); }
 
-const all = files.concat(links, musicItems)
+/* 全局去重保险：任何来源产生相同 id 时，用「id + name」重算，保证唯一 */
+const seenIds = new Map();
+const deduped = files.concat(links, musicItems).map(item => {
+  if (!item.id) return item;
+  if (seenIds.has(item.id)) {
+    item = { ...item, id: 'w' + createHash('sha1').update(item.id + '|' + (item.name || item.url || '')).digest('hex').slice(0, 10) };
+  }
+  seenIds.set(item.id, true);
+  return item;
+});
+
+const all = deduped
   .sort((a, b) => new Date(b.date) - new Date(a.date));
 
 /* 只给最新的 40 张内联迷你预览：首屏滑几屏都有模糊占位，清单只增 ~15KB */

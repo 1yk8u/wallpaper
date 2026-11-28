@@ -44,6 +44,7 @@ const Payment = (() => {
   const GH_REPO_API = 'https://api.github.com/repos/1yk8u/wallpaper';
   const GH_BRANCH = 'main';
   const GH_ORDER_DIR = 'data/pay/orders';
+  const GH_MANUAL_DIR = 'data/pay/manual';   // 手动确认订单（个人收款码 + 后台核对）
   const QR_LIB = 'assets/qrcode.js';
   const QR_PAY = 'assets/pay-qr.png';
   const QR_CONTACT = 'assets/contact-qr.png';
@@ -67,6 +68,7 @@ const Payment = (() => {
   const K_PENDING = 'wallpaper_pending_v2'; // 未完成订单（刷新后可继续轮询）
 
   /* ===== 工具 ===== */
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function today() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -242,6 +244,23 @@ const Payment = (() => {
 .pay-qr-static{width:200px;height:200px;object-fit:contain;border:2px solid #e5e7eb;border-radius:12px}
 .pay-count{font-size:12px;color:#dc2626;font-weight:700}
 .pay-warn{background:#fef2f2;color:#b91c1c;padding:9px 12px;border-radius:10px;font-size:12px;line-height:1.6;margin-bottom:10px;text-align:left}
+.manual-submit{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.manual-submit input{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:14px;outline:none;background:#fff;color:#1f2937}
+.manual-submit input:focus{border-color:#557a3c;box-shadow:0 0 0 3px rgba(85,122,60,.14)}
+.manual-submit button{padding:11px;border:0;border-radius:10px;background:#557a3c;color:#fff;font-weight:700;font-size:14px;cursor:pointer}
+.manual-submit button:disabled{opacity:.6;cursor:not-allowed}
+.manual-msg{font-size:12px;color:#6b7280;line-height:1.6;text-align:center;min-height:18px}
+.pay-admin-orders{margin-top:16px;border-top:1px dashed #e5e7eb;padding-top:14px}
+.pay-admin-orders h3{margin:0 0 10px;font-size:15px}
+.pay-order-row{border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;line-height:1.7;background:#fafafa}
+.pay-order-row .po-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pay-order-row .po-sn{font-weight:700;color:#374151}
+.pay-order-row .po-status{font-size:11px;padding:2px 8px;border-radius:20px;background:#fef3c7;color:#92400e}
+.pay-order-row .po-status.confirmed{background:#dcfce7;color:#166534}
+.pay-order-row .po-actions{display:flex;gap:8px;margin-top:8px}
+.pay-order-row button{flex:1;padding:7px;border:0;border-radius:8px;font-size:12px;cursor:pointer}
+.pay-order-row .po-ok{background:#557a3c;color:#fff}
+.pay-order-row .po-no{background:#f3f4f6;color:#6b7280}
 .pay-ok{background:#f0fdf4;color:#15803d;padding:12px;border-radius:10px;font-size:14px;font-weight:700}
 .pay-detect{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#6b7280;margin-top:8px}
 .pay-spin{width:15px;height:15px;border:2px solid #d1d5db;border-top-color:#2563eb;border-radius:50%;animation:paySpin .7s linear infinite}
@@ -327,6 +346,10 @@ const Payment = (() => {
       <p>获取邀请码 / 付款问题，扫码加好友</p>
       <img src="${QR_CONTACT}" alt="微信联系码" class="pay-contact-qr" loading="lazy">
     </div>
+    <div class="pay-admin-orders hidden" id="pay-admin-orders">
+      <h3>待核对订单（管理员）</h3>
+      <div id="pay-admin-list"><div class="manual-msg">加载中…</div></div>
+    </div>
   </div>
 </div>`;
 
@@ -367,10 +390,23 @@ const Payment = (() => {
       if (e.key === 'Enter') $('pay-invite-btn').click();
     });
 
-    /* 有未完成订单 → 自动恢复轮询（刷新页面也不丢单） */
+    /* 管理员：显示待核对订单入口 */
+    let isAdmin = false;
+    try { isAdmin = !!(typeof window !== 'undefined' && typeof window.__wpIsAdmin === 'function' && window.__wpIsAdmin()); } catch (e) {}
+    if (isAdmin && ghOK()) {
+      $('pay-admin-orders').classList.remove('hidden');
+      loadManualOrders();
+    }
+
+    /* 有未完成订单 → 自动恢复轮询（刷新页面也不丢单）；手动订单走人工确认轮询 */
     const pending = loadJSON(K_PENDING, null);
     if (pending && pending.sn && Date.now() - pending.at < 6 * 60 * 1000) {
-      resumePolling(pending);
+      if (pending.chan === 'manual') {
+        const t = tierById(pending.tierId) || TIERS[0];
+        startManualPolling(pending.sn, t);
+      } else {
+        resumePolling(pending);
+      }
     }
   }
 
@@ -631,16 +667,136 @@ const Payment = (() => {
     startPolling(p.sn, tier, 0, p.chan || (USE_NETLIFY ? 'netlify' : 'gh'));
   }
 
-  /* ===== 网关未开通 / 不可用：静态收款码 + 人工核对（不假装到账） ===== */
+  /* ===== 网关未开通 / 不可用：个人收款码 + 提交凭证 + 管理员核对（不假装到账） ===== */
   function gatewayUnavailable(tier, reason, orderSn) {
     stopPolling();
     const sn = orderSn || ('M' + Date.now().toString(36).toUpperCase());
     stage(`
-      <div class="pay-warn"><b>自动到账检测暂未开启</b><br>${reason}<br>可先扫码付款，保存订单号后加下方微信好友核对领取。</div>
+      <div class="pay-warn"><b>个人收款码支付</b><br>扫码付款后，填微信支付凭证页的「交易单号」提交，管理员核对后自动到账。</div>
       <div class="pay-stage-title">微信扫码支付 ¥${fmt(tier.price)}</div>
       <div class="pay-qr-box"><img class="pay-qr-static" src="${QR_PAY}" alt="微信收款码"></div>
-      <div class="pay-stage-hint">档位：${tier.title}（${tier.desc}）<br>订单号 <b>${sn}</b>　付款后请截图保存</div>
+      <div class="pay-stage-hint">档位：${tier.title}（${tier.desc}）<br>订单号 <b>${sn}</b>　付款后请保存交易单号</div>
+      <div class="manual-submit">
+        <input type="text" id="manual-txid" placeholder="粘贴微信支付交易单号（4200...）" autocomplete="off">
+        <input type="text" id="manual-nick" placeholder="你的微信昵称 / 备注（选填）" autocomplete="off">
+        <button id="manual-submit-btn">我已付款，提交核对</button>
+        <div class="manual-msg" id="manual-msg">提交后请等待管理员确认，一般几分钟内到账。本页会停留等待，别关闭。</div>
+      </div>
     `);
+    const btn = document.getElementById('manual-submit-btn');
+    if (btn) btn.addEventListener('click', () => submitManualPayment(sn, tier));
+    /* 刷新后自动恢复：若本机有该手动订单且未到账，继续轮询 */
+    const pm = loadJSON(K_PENDING, null);
+    if (pm && pm.sn === sn && pm.chan === 'manual') startManualPolling(sn, tier);
+  }
+
+  /* 手动订单写入仓库，等待管理员在后台确认 */
+  async function submitManualPayment(sn, tier) {
+    const msg = document.getElementById('manual-msg');
+    const txid = (document.getElementById('manual-txid') || {}).value || '';
+    const nick = (document.getElementById('manual-nick') || {}).value || '';
+    if (!txid.trim()) { if (msg) msg.textContent = '请填写微信支付交易单号'; return; }
+    if (!ghOK()) { if (msg) msg.textContent = '无法连接订单服务，请扫码加好友凭订单号核对'; return; }
+    const btn = document.getElementById('manual-submit-btn');
+    if (btn) btn.disabled = true;
+    if (msg) msg.textContent = '正在提交…';
+    try {
+      const path = GH_MANUAL_DIR + '/' + sn + '.json';
+      let sha = '';
+      try { const cur = await gh('/contents/' + encodeURI(path) + '?ref=' + GH_BRANCH); sha = cur.sha || ''; } catch (e) {}
+      const payload = {
+        sn, tierId: tier.id, amount: tier.price,
+        txid: txid.trim(), nick: nick.trim(),
+        status: 'pending', client: 'web',
+        createdAt: new Date().toISOString(),
+      };
+      await gh('/contents/' + encodeURI(path), {
+        method: 'PUT',
+        body: JSON.stringify({ message: 'manual pay submit ' + sn, content: b64json(payload), branch: GH_BRANCH, ...(sha ? { sha } : {}) }),
+      });
+      saveJSON(K_PENDING, { sn, tierId: tier.id, at: Date.now(), chan: 'manual' });
+      if (msg) msg.textContent = '已提交，等待管理员确认中…（本页会自动刷新状态）';
+      startManualPolling(sn, tier);
+    } catch (e) {
+      if (msg) msg.textContent = '提交失败：' + (e.message || e) + '。请扫码加好友凭订单号 ' + sn + ' 核对';
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /* 轮询手动订单是否被管理员确认 */
+  function startManualPolling(sn, tier) {
+    stopPolling(true);
+    let tries = 0;
+    const tick = async () => {
+      try {
+        const j = await gh('/contents/' + encodeURI(GH_MANUAL_DIR + '/' + sn + '.json') + '?ref=' + GH_BRANCH + '&t=' + Date.now());
+        const d = unb64json(j.content);
+        if (d.status === 'confirmed') {
+          paidSuccess(sn, tier, d.tierId || tier.id);
+          return;
+        }
+        if (d.status === 'rejected') {
+          stopPolling();
+          const m = document.getElementById('manual-msg');
+          if (m) m.textContent = '订单未通过核对，请扫码加好友说明理由';
+          return;
+        }
+      } catch (e) {}
+      tries++;
+      const m = document.getElementById('manual-msg');
+      if (m && tries % 3 === 0) m.textContent = '等待管理员确认中…（已查询 ' + (tries * 3) + ' 秒）';
+      if (tries > 100) { stopPolling(); if (m) m.textContent = '等待超时，请扫码加好友凭订单号 ' + sn + ' 核对'; }
+    };
+    pollTimer = setInterval(tick, 3000);
+    tick();
+  }
+
+  /* ===== 管理员：列出手动订单并确认/拒绝 ===== */
+  async function loadManualOrders() {
+    const box = document.getElementById('pay-admin-list');
+    if (!box) return;
+    box.innerHTML = '<div class="manual-msg">加载中…</div>';
+    try {
+      const list = await gh('/contents/' + GH_MANUAL_DIR + '?ref=' + GH_BRANCH + '&t=' + Date.now());
+      const files = (Array.isArray(list) ? list : []).filter(f => /\.json$/.test(f.name));
+      if (!files.length) { box.innerHTML = '<div class="manual-msg">暂无手动订单</div>'; return; }
+      const orders = await Promise.all(files.map(async f => {
+        try { const j = await gh('/contents/' + encodeURI(GH_MANUAL_DIR + '/' + f.name) + '?ref=' + GH_BRANCH); return { file: f, data: unb64json(j.content) }; }
+        catch (e) { return null; }
+      }));
+      const valid = orders.filter(Boolean).sort((a, b) => (b.data.createdAt || '').localeCompare(a.data.createdAt || ''));
+      box.innerHTML = valid.map(o => {
+        const d = o.data;
+        const tier = tierById(d.tierId) || tierByAmount(d.amount);
+        return `<div class="pay-order-row">
+          <div class="po-head"><span class="po-sn">${esc(d.sn || '')}</span><span class="po-status ${d.status === 'confirmed' ? 'confirmed' : ''}">${esc(d.status || 'pending')}</span></div>
+          <div>金额 ¥${fmt(d.amount)} · ${esc(tier ? tier.title : (d.tierId || ''))}</div>
+          <div>交易单号：${esc(d.txid || '')}　昵称：${esc(d.nick || '-')}</div>
+          <div>提交时间：${esc((d.createdAt || '').replace('T', ' ').slice(0, 19))}</div>
+          ${d.status === 'pending' ? `<div class="po-actions"><button class="po-ok" data-sn="${esc(d.sn)}" data-sha="${esc(o.file.sha)}" data-act="confirmed">确认到账</button><button class="po-no" data-sn="${esc(d.sn)}" data-sha="${esc(o.file.sha)}" data-act="rejected">拒绝</button></div>` : ''}
+        </div>`;
+      }).join('');
+      box.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', async () => {
+        b.disabled = true;
+        await setManualOrderStatus(b.dataset.sn, b.dataset.sha, b.dataset.act);
+        loadManualOrders();
+      }));
+    } catch (e) {
+      box.innerHTML = '<div class="manual-msg">加载失败：' + (e.message || e) + '</div>';
+    }
+  }
+
+  async function setManualOrderStatus(sn, sha, status) {
+    const path = GH_MANUAL_DIR + '/' + sn + '.json';
+    let cur;
+    try { cur = await gh('/contents/' + encodeURI(path) + '?ref=' + GH_BRANCH); } catch (e) { return; }
+    const d = unb64json(cur.content);
+    d.status = status;
+    d.confirmedAt = new Date().toISOString();
+    await gh('/contents/' + encodeURI(path), {
+      method: 'PUT',
+      body: JSON.stringify({ message: 'manual pay ' + status + ' ' + sn, content: b64json(d), sha: cur.sha, branch: GH_BRANCH }),
+    });
   }
 
   /* ===== 顶栏额度徽章 ===== */

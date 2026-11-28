@@ -12,6 +12,24 @@
  * ===================================================================== */
 
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/* B站指纹池：每天由 bili-fingerprint.mjs 定时刷新到 data/bili-fingerprints.json。
+ * 带新鲜指纹的 CDN 直链请求实测可从 403 → 200；这里轮换读取，避免同一套被反复用。 */
+const __DIR = path.dirname(fileURLToPath(import.meta.url));
+const BILI_FP_PATH = path.resolve(__DIR, '..', 'data', 'bili-fingerprints.json');
+function poolCookie() {
+  try {
+    const j = JSON.parse(fs.readFileSync(BILI_FP_PATH, 'utf8'));
+    const arr = (j.fingerprints || []).filter(x => x && x.cookie && /buvid3=/.test(x.cookie));
+    if (!arr.length) return '';
+    /* 用时间戳做轮换索引，每次解析换一套；同一次进程内也用计数错开 */
+    const idx = (Date.now() + (poolCookie._n = (poolCookie._n || 0) + 1)) % arr.length;
+    return arr[idx].cookie;
+  } catch (e) { return ''; }
+}
 
 export const ENGINE_VERSION = '1.0.0';
 
@@ -507,11 +525,17 @@ async function parseKuaishou(url, ctx) {
   fail('STRUCT', '快手页面没有作品数据（可能是推荐页/风控页/短链已失效），换完整作品链接或在本地 CLI 里试');
 }
 
-/* B 站对无设备指纹的请求常返回 -412，先访问首页领一份 buvid3 cookie 再打 API */
+/* B 站对无设备指纹的请求常返回 -412/403：
+ *   1) 优先用「每天自动更新的指纹池」里的一套（轮换），带它请求直链实测 200；
+ *   2) 池子为空/失效时，回退老办法——现访问首页领一份 buvid3。 */
 async function biliCookie() {
+  const pooled = poolCookie();
+  if (pooled) return pooled;
   try {
     const r = await httpGet('https://www.bilibili.com/', { timeout: 12000 });
-    const sc = r.headers.get('set-cookie') || '';
+    const sc = r.headers.getSetCookie
+      ? r.headers.getSetCookie().join('; ')
+      : (r.headers.get('set-cookie') || '');
     const out = [];
     for (const n of ['buvid3', 'buvid4', 'b_nut', 'b_lsid', 'bili_ticket']) {
       const m = sc.match(new RegExp('(?:^|,\\s*|;\\s*)' + n + '=([^;,]+)'));

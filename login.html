@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>登录 · 壁纸库</title>
+<meta name="theme-color" content="#e9e2cf">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=20261128D">
+<style>
+/* 登录页独立样式：沿用壁纸库的纸色 + 苔绿色调 */
+:root { --paper:#e9e2cf; --ink:#243027; --moss:#557a3c; --moss2:#8aa964; --line:#d3cbb6; }
+* { box-sizing:border-box; }
+html,body { margin:0; min-height:100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color:var(--ink); background:
+    radial-gradient(1100px 600px at 85% -10%, rgba(138,169,100,.18), transparent 65%),
+    radial-gradient(900px 500px at -10% 110%, rgba(85,122,60,.14), transparent 60%),
+    var(--paper);
+  display:flex; align-items:center; justify-content:center; padding:24px 16px;
+}
+.lg-card {
+  width:min(420px,100%); background:rgba(255,253,247,.92); border:1px solid var(--line);
+  border-radius:22px; padding:32px 28px 26px; box-shadow:0 18px 50px rgba(50,70,40,.13);
+}
+.lg-brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:19px; letter-spacing:.5px; }
+.lg-brand svg { width:38px; height:38px; flex:none; }
+.lg-sub { margin:10px 0 22px; font-size:13px; color:#6b7469; line-height:1.7; }
+.lg-tabs { display:flex; gap:6px; background:#efe9d9; padding:4px; border-radius:12px; margin-bottom:20px; }
+.lg-tabs button { flex:1; border:0; background:transparent; padding:9px 0; border-radius:9px; font-size:14px; color:#6b7469; cursor:pointer; font-weight:600; }
+.lg-tabs button.on { background:#fffdf7; color:var(--moss); box-shadow:0 2px 8px rgba(50,70,40,.09); }
+.lg-row { margin-bottom:14px; }
+.lg-row label { display:block; font-size:12px; color:#6b7469; margin:0 0 6px 2px; }
+.lg-row input {
+  width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:11px;
+  background:#fffdf7; font-size:15px; color:var(--ink); outline:none; transition:.15s;
+}
+.lg-row input:focus { border-color:var(--moss2); box-shadow:0 0 0 3px rgba(138,169,100,.18); }
+.lg-accounts { display:flex; flex-wrap:wrap; gap:8px; margin:-4px 0 16px; }
+.lg-accounts button {
+  border:1px solid var(--line); background:#fffdf7; color:#4c594a; border-radius:999px;
+  padding:6px 13px; font-size:13px; cursor:pointer;
+}
+.lg-accounts button:hover { border-color:var(--moss2); color:var(--moss); }
+.lg-btn {
+  width:100%; border:0; border-radius:12px; padding:13px; font-size:15px; font-weight:700;
+  color:#fff; background:var(--moss); cursor:pointer; margin-top:4px; transition:.15s;
+}
+.lg-btn:hover { background:#4a6b33; }
+.lg-btn:disabled { opacity:.55; cursor:not-allowed; }
+.lg-msg { min-height:20px; margin-top:10px; font-size:13px; color:#b0443a; text-align:center; }
+.lg-foot { margin-top:18px; padding-top:16px; border-top:1px dashed var(--line); font-size:12px; color:#8a9288; line-height:1.7; }
+.lg-link { color:var(--moss); cursor:pointer; text-decoration:underline; }
+.lg-hint { display:none; }
+</style>
+</head>
+<body>
+<div class="lg-card">
+  <div class="lg-brand">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8aa964"/><stop offset="1" stop-color="#557a3c"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lm)"/><path d="M15 41V25c0-2.8 2.2-5 5-5h24c2.8 0 5 2.2 5 5v14c0 2.8-2.2 5-5 5H25" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><circle cx="25.5" cy="27" r="3.6" fill="#fff"/><path d="M19 38l7-7 6 6 5-5 8 8" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/></svg>
+    <span>壁纸库</span>
+  </div>
+  <p class="lg-sub">欢迎回来。登录之后就能逛壁纸、听音乐、用解析工具。</p>
+
+  <div class="lg-tabs">
+    <button id="lg-tab-login" class="on">登录</button>
+    <button id="lg-tab-reg">注册</button>
+  </div>
+
+  <div id="lg-accounts" class="lg-accounts"></div>
+
+  <div class="lg-row">
+    <label for="lg-user">用户名</label>
+    <input id="lg-user" autocomplete="username" placeholder="输入用户名" spellcheck="false">
+  </div>
+  <div class="lg-row">
+    <label for="lg-pass">密码</label>
+    <input id="lg-pass" type="password" autocomplete="current-password" placeholder="输入密码">
+  </div>
+  <div class="lg-row lg-hint" id="lg-pass2-row">
+    <label for="lg-pass2">确认密码</label>
+    <input id="lg-pass2" type="password" autocomplete="new-password" placeholder="再输一次密码">
+  </div>
+  <button id="lg-go" class="lg-btn">登录并进入</button>
+  <div class="lg-msg" id="lg-msg"></div>
+
+  <div class="lg-foot">
+    账号保存在<b>你自己的浏览器里</b>，下次打开本页会自动填好用户名，只需输入密码。换设备需要重新注册。<br>
+    想换账号？<span class="lg-link" id="lg-switch">点这里清除记住的用户名</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var K_ACCT = 'wp_login_accounts';   // { username: sha256(password) }
+  var K_LAST = 'wp_login_last';       // 记住的用户名
+  var K_SESSION = 'wp_session';       // 当前登录的用户名
+
+  var $ = function (id) { return document.getElementById(id); };
+  var userEl = $('lg-user'), passEl = $('lg-pass'), pass2El = $('lg-pass2');
+  var msgEl = $('lg-msg'), goEl = $('lg-go');
+  var accountsEl = $('lg-accounts'), pass2Row = $('lg-pass2-row');
+  var tabLogin = $('lg-tab-login'), tabReg = $('lg-tab-reg');
+  var mode = 'login';
+
+  function readAccounts() {
+    try { return JSON.parse(localStorage.getItem(K_ACCT) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function writeAccounts(a) { localStorage.setItem(K_ACCT, JSON.stringify(a)); }
+
+  /* Web Crypto 的 SHA-256，避免把明文密码写进 localStorage */
+  function sha256(s) {
+    if (window.crypto && crypto.subtle) {
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function (buf) {
+        return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+          return ('0' + b.toString(16)).slice(-2);
+        }).join('');
+      });
+    }
+    /* 兼容 http 等非安全上下文的极简回退（仅本机保存，安全性有限） */
+    var h1 = 5381, h2 = 52711, i;
+    for (i = 0; i < s.length; i++) { h1 = (h1 * 33) ^ s.charCodeAt(i); h2 = (h2 * 33) ^ s.charCodeAt(i); }
+    return Promise.resolve(((h1 >>> 0).toString(16)) + ((h2 >>> 0).toString(16)));
+  }
+
+  function showAccounts() {
+    var a = readAccounts();
+    var names = Object.keys(a);
+    accountsEl.innerHTML = '';
+    if (!names.length) return;
+    names.forEach(function (name) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = name;
+      b.addEventListener('click', function () {
+        userEl.value = name;
+        localStorage.setItem(K_LAST, name);
+        passEl.value = '';
+        passEl.focus();
+        setMode('login');
+        msgEl.textContent = '已选中 ' + name + '，请输入密码';
+      });
+      accountsEl.appendChild(b);
+    });
+  }
+
+  function setMode(m) {
+    mode = m;
+    tabLogin.classList.toggle('on', m === 'login');
+    tabReg.classList.toggle('on', m === 'reg');
+    pass2Row.style.display = m === 'reg' ? 'block' : 'none';
+    goEl.textContent = m === 'reg' ? '注册并进入' : '登录并进入';
+    msgEl.textContent = '';
+  }
+
+  tabLogin.addEventListener('click', function () { setMode('login'); });
+  tabReg.addEventListener('click', function () { setMode('reg'); });
+  $('lg-switch').addEventListener('click', function () {
+    localStorage.removeItem(K_LAST);
+    userEl.value = '';
+    passEl.value = '';
+    userEl.disabled = false;
+    msgEl.textContent = '已清除记住的用户名';
+  });
+
+  /* 已登录直接进入首页 */
+  try {
+    if (localStorage.getItem(K_SESSION)) { location.replace('./index.html'); return; }
+  } catch (e) {}
+
+  var last = '';
+  try { last = localStorage.getItem(K_LAST) || ''; } catch (e) {}
+  if (last) {
+    userEl.value = last;
+    userEl.disabled = true;   // 记住用户名：下次只输密码
+  }
+  showAccounts();
+  setMode(Object.keys(readAccounts()).length ? 'login' : 'reg');
+  setTimeout(function () { (last ? passEl : userEl).focus(); }, 80);
+
+  function finish(name) {
+    try {
+      localStorage.setItem(K_SESSION, name);
+      localStorage.setItem(K_LAST, name);
+    } catch (e) {}
+    location.replace('./index.html');
+  }
+
+  goEl.addEventListener('click', function () {
+    var name = (userEl.value || '').trim();
+    var pass = passEl.value || '';
+    if (!name) { msgEl.textContent = '请输入用户名'; return; }
+    if (!pass) { msgEl.textContent = '请输入密码'; return; }
+    goEl.disabled = true;
+    sha256(pass).then(function (hash) {
+      var a = readAccounts();
+      if (mode === 'reg') {
+        if (a[name]) { msgEl.textContent = '这个用户名已存在，请直接登录'; setMode('login'); return; }
+        if ((pass2El.value || '') !== pass) { msgEl.textContent = '两次密码不一致'; return; }
+        a[name] = hash;
+        writeAccounts(a);
+        showAccounts();
+        finish(name);
+      } else {
+        if (!a[name]) { msgEl.textContent = '没有这个账号，请先注册'; setMode('reg'); return; }
+        if (a[name] !== hash) {
+          /* 兼容早期明文存储 */
+          if (a[name] !== pass) { msgEl.textContent = '密码不对，再试一次'; passEl.value = ''; return; }
+        }
+        finish(name);
+      }
+    }).catch(function () { msgEl.textContent = '加密失败，请刷新重试'; })
+      .finally(function () { goEl.disabled = false; });
+  });
+
+  [userEl, passEl, pass2El].forEach(function (el) {
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter') goEl.click(); });
+  });
+})();
+</script>
+</body>
+</html>

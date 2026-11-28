@@ -13,15 +13,18 @@ const WALLPAPER_DIR = process.cwd() + '/wallpapers';
 const DATA_DIR = process.cwd() + '/data';
 const THUMB_DIR = process.cwd() + '/thumbs';
 
+/* 迷你预览表：make-thumbs.py 生成，内联进清单让首屏秒显模糊图 */
+let LQIPS = {};
+try { LQIPS = JSON.parse(readFileSync(DATA_DIR + '/lqip.json', 'utf8')) || {}; }
+catch (e) {}
+
 const isVideo = (n) => /\.(mp4|mov|webm|m4v)$/i.test(n);
 const isGif = (n) => /\.gif$/i.test(n);
 const isImage = (n) => /\.(jpe?g|png|webp|avif)$/i.test(n);
 const isAudio = (n) => /\.(mp3|m4a|aac|flac|wav|ogg|opus)$/i.test(n);
 
-/* 音乐加速：wallpapers/音乐_xxx.mp3 是中文名，jsdelivr CDN 会 404、只能走慢速同源。
- * 但存库时用零字节引用，它与 data/audio/au_xxx.ext 是同一份字节（blob sha 相同）。
- * 这里先给 data/audio 里的英文文件建 sha→路径 映射，音乐条目据此写 playUrl，
- * 前端播放器用 playUrl 走 CDN 英文路径，点播秒响。 */
+/* 音乐加速：data/audio/au_xxx.ext 是英文文件名，jsdelivr CDN 可用。
+ * 这里先建 sha→路径 映射，音乐条目据此写 playUrl，前端播放器点播秒响。 */
 const AUDIO_DIR = process.cwd() + '/data/audio';
 const shaToAudio = new Map();
 try {
@@ -102,7 +105,12 @@ const audio = isAudio(f.name);
     };
     /* 音乐条目附 CDN 可用的英文播放路径（sha 匹配 data/audio 同字节文件） */
     if (audio && shaToAudio.has(id)) item.playUrl = shaToAudio.get(id);
-    if (coverFull) item.cover = 'wallpapers/' + relative(WALLPAPER_DIR, coverFull).split(sep).join('/');
+    if (coverFull) {
+      item.cover = 'wallpapers/' + relative(WALLPAPER_DIR, coverFull).split(sep).join('/');
+      const cdot = coverFull.name.lastIndexOf('.');
+      const cThumb = (cdot > 0 ? coverFull.name.slice(0, cdot) : coverFull.name) + '.webp';
+      if (existsSync(join(THUMB_DIR, cThumb))) item.coverThumb = 'thumbs/' + cThumb;
+    }
     const tbBase = (dot > 0 ? f.name.slice(0, dot) : f.name) + '.webp';
     if (existsSync(join(THUMB_DIR, tbBase))) item.thumb = 'thumbs/' + tbBase;
     items.push(item);
@@ -136,33 +144,49 @@ if (existsSync(linksPath)) {
 const files = scan(WALLPAPER_DIR);
 
 /* ===== 音乐条目：直接从 data/audio/ + data/covers/ + 解析缓存生成 =====
- * 音频的真实字节一直存在 data/audio/au_xxx.ext，而 wallpapers/ 里并没有音频文件
- * （存库走零字节引用，指向 data/audio）。旧版 build-manifest 只扫 wallpapers/，
- * 一旦 Actions 重建清单，音乐条目就全部消失，只剩手机 localStorage 旧缓存里的
- * 默认音符卡片。这里改为扫描 data/audio 并重放解析缓存里的元数据，保证音乐条目
- * 每次重建都稳定存在，且带 playUrl（CDN 英文路径）和 cover（真实专辑封面）。 */
+ * 音频真实字节存在 data/audio/au_xxx.ext。旧版只扫 wallpapers/，Actions 一重建
+ * 清单音乐就全消失。这里扫描 data/audio 并重放解析缓存元数据，保证音乐条目
+ * 每次重建都稳定存在，且带 playUrl（CDN 英文路径）和 cover（真实专辑封面）。
+ * 同一首歌可能同时存在 .m4a 和 .mp3（同 sha），按 sha 去重，只保留一条。 */
 function readJSON(path) {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch (e) { return null; }
 }
 const parseCache = readJSON(join(DATA_DIR, 'parse-cache.json'));
 const cacheEntries = (parseCache && parseCache.entries) || (parseCache && typeof parseCache === 'object' ? parseCache : {});
-/* 用 localAudio 路径反查元数据（title / artist / cover / ts） */
-const audioMeta = new Map();
+/* 元数据按 sha（au_<sha>.* 的 16 位哈希）映射：同一首歌可能存成 .m4a/.mp3，
+ * sha 相同而文件名不同，按 sha 映射才能保证去重后仍命中 title/artist/cover。 */
+const shaMeta = new Map();
 for (const [key, v] of Object.entries(cacheEntries)) {
   if (!v || v.kind !== 'music' || !v.localAudio) continue;
-  const la = String(v.localAudio).replace(/^\/+/, '');
-  audioMeta.set(la, { key, v });
+  const m = /au_([0-9a-f]{16})\./i.exec(String(v.localAudio));
+  if (!m) continue;
+  const sha = m[1];
+  const prev = shaMeta.get(sha);
+  const curTs = v.ts ? new Date(v.ts).getTime() : 0;
+  const prevTs = prev && prev.v && prev.v.ts ? new Date(prev.v.ts).getTime() : -1;
+  if (!prev || curTs >= prevTs) shaMeta.set(sha, { key, v });
 }
 
 const musicItems = [];
+const seenSha = new Set();   // 已生成过音乐条目的 sha，避免 m4a/mp3 重复
+const extRank = { mp3: 0, m4a: 1, aac: 2, ogg: 3, opus: 4, wav: 5 };
 try {
-  for (const f of readdirSync(AUDIO_DIR)) {
-    if (!/^au_([0-9a-f]{16})\.(mp3|m4a|aac|wav|ogg|opus)$/i.test(f)) continue;
-    const m = /^au_([0-9a-f]{16})\.(mp3|m4a|aac|wav|ogg|opus)$/i.exec(f);
-    const sha = m[1];
+  const audioFiles = readdirSync(AUDIO_DIR)
+    .filter(f => /^au_([0-9a-f]{16})\.(mp3|m4a|aac|wav|ogg|opus)$/i.test(f))
+    .map(f => {
+      const m = /^au_([0-9a-f]{16})\.(mp3|m4a|aac|wav|ogg|opus)$/i.exec(f);
+      return { f, sha: m[1], ext: m[2].toLowerCase() };
+    })
+    /* 同 sha 优先 mp3（兼容性最好），其次按 extRank 排序 */
+    .sort((a, b) => a.sha === b.sha
+      ? (extRank[a.ext] ?? 9) - (extRank[b.ext] ?? 9)
+      : a.sha.localeCompare(b.sha));
+  for (const { f, sha } of audioFiles) {
+    if (seenSha.has(sha)) continue;   // 同一首歌的其它格式跳过
+    seenSha.add(sha);
     const full = join(AUDIO_DIR, f);
     const size = statSync(full).size;
-    const meta = audioMeta.get('data/audio/' + f) || {};
+    const meta = shaMeta.get(sha) || {};
     const v = meta.v || {};
     const title = String(v.title || ('音乐 ' + sha.slice(0, 8))).trim();
     const artist = String(v.artist || '').trim();
@@ -198,6 +222,33 @@ try {
 const all = files.concat(links, musicItems)
   .sort((a, b) => new Date(b.date) - new Date(a.date));
 
+/* 只给最新的 40 张内联迷你预览：首屏滑几屏都有模糊占位，清单只增 ~15KB */
+let lqipUsed = 0;
+for (const item of all) {
+  if (lqipUsed >= 40) break;
+  if (item.lqip) { lqipUsed++; continue; }
+  const base = (item.name || '').replace(/\.[^.]+$/, '') + '.webp';
+  if (LQIPS[base]) { item.lqip = LQIPS[base]; lqipUsed++; }
+}
+
+/* 首屏 6 张把缩略图 base64 内联：清单一到就是清晰图，零图片请求。
+ * 单张 WebP ~10-22KB，6 张约 120KB。两个清单都带 inline，
+ * 否则完整清单后台替换首屏时会把内联图覆盖掉，首屏又变慢。 */
+const hero = all.slice(0, 6);
+for (const item of hero) {
+  if (!item.thumb) continue;
+  try {
+    const buf = readFileSync(join(process.cwd(), item.thumb));
+    item.inline = 'data:image/webp;base64,' + buf.toString('base64');
+  } catch (e) {}
+}
+
 const out = { updated: new Date().toISOString(), items: all };
-writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out, null, 2), 'utf8');
+/* 不缩进：859 条清单从 ~588KB 降到 ~390KB，手机首开少下载三分之一 */
+writeFileSync(join(DATA_DIR, 'wallpapers.json'), JSON.stringify(out), 'utf8');
+/* 首屏小清单约 120KB：前端先拉它把首屏画出来，完整清单后台慢慢下再无缝替换。 */
+writeFileSync(join(DATA_DIR, 'hero.json'),
+  JSON.stringify({ updated: out.updated, items: hero }), 'utf8');
+console.log(`hero: ${hero.length} 张首屏图（${hero.filter(x=>x.inline).length} 张内联清晰图）`);
+
 console.log(`manifest: ${files.length} 文件 + ${links.length} 直链 = ${all.length} 条`);

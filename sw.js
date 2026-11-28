@@ -6,7 +6,7 @@
  *   - 应用外壳 JS/CSS：cache-first（带 ?v= 版本号，升级天然破缓存）
  *   - 缩略图/同源封面：cache-first，限量淘汰；原图不缓存，不占手机空间
  */
-const SHELL = 'wp-shell-v2';
+const SHELL = 'wp-shell-v3';
 const MEDIA = 'wp-media-v2';
 const SHELL_LIMIT = 80;
 const MEDIA_LIMIT = 600;
@@ -52,8 +52,12 @@ self.addEventListener('fetch', event => {
   if (u.origin !== self.location.origin) return;
   const p = u.pathname;
 
-  /* 页面导航：缓存优先秒出，后台更新固定 key */
+  /* 页面导航：登录页必须走网络，绝不能被缓存成首页而绕过登录门 */
   if (req.mode === 'navigate') {
+    if (/login\.html$/.test(p)) {
+      event.respondWith(fetch(req).catch(() => caches.match('./login.html')));
+      return;
+    }
     event.respondWith((async () => {
       const c = await caches.open(SHELL);
       const key = './index.html';
@@ -67,6 +71,12 @@ self.addEventListener('fetch', event => {
         return res;
       } catch (e) { return Response.error(); }
     })());
+    return;
+  }
+
+  /* 登录页自身资源不缓存，保证登录逻辑始终最新 */
+  if (/login\.html/.test(p)) {
+    event.respondWith(fetch(req).catch(() => caches.match(req)));
     return;
   }
 

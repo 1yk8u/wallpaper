@@ -27,18 +27,6 @@ const Music = (() => {
   const NE_HOME = 'https://music.163.com';
   /* 唯一允许被 fetch 的音频路径：自家仓库的相对路径，http(s) 一律拒绝 */
   const LOCAL_AUDIO_RE = /^data\/audio\/au_[0-9a-f]{16}\.(mp3|m4a)$/i;
-  /* 自家仓库音频的 CDN 加速域名：同一份文件，jsdelivr 在国内实测 ~900KB/s，
-   * 而 GitHub Pages 仅 ~13KB/s（4MB 要下 5 分钟）。这不是第三方音频源——
-   * 文件仍在自家仓库，只是借 CDN 边缘节点分发，字节与同源完全一致。 */
-  const AUDIO_CDN = 'https://cdn.jsdelivr.net/gh/1yk8u/wallpaper@main/';
-  /* 相对音频路径 → 加速 URL；只接受 LOCAL_AUDIO_RE，杜绝任何外部直链。
-   * 返回 absolute URL 供 <audio src> / fetch 使用。 */
-  function normLocal(local) { return String(local || '').replace(/^\/+/, ''); }
-  function cdnURL(local) {
-    const p = normLocal(local);
-    if (!LOCAL_AUDIO_RE.test(p)) return '';
-    return AUDIO_CDN + p;
-  }
 
   const PLATS = [
     { key: 'netease', name: '网易云音乐', short: '网易云', color: '#e60026',
@@ -99,6 +87,10 @@ const Music = (() => {
       artist: g.artist || '',
       album: '', cover: '',
       localAudio: '', audioExt: '', source: '', matched: false,
+      /* 网易云官方长期外链：识别到 ID 即可秒开试听，不用等自家仓库代抓；
+       * 汽水音频带签名会过期、无长期外链，留空继续走代抓。 */
+      directAudio: (p.key === 'netease' && /^\d{5,14}$/.test(id))
+        ? ('https://music.163.com/song/media/outer/url?id=' + id + '.mp3') : '',
       blobUrl: '',
       page: (typeof extractURL === 'function' ? extractURL(raw) : '') ||
             (String(raw).match(/https?:\/\/[^\s"'<>]+/) || [])[0] || '',
@@ -129,37 +121,9 @@ const Music = (() => {
   /* ===== 向自家仓库要【同源音频】，拿不到就派单让 Actions 抓 ===== */
   async function enrich(s, row, noteEl) {
     const key = cacheKeyOf(s);
-    if (!key || (typeof serverCacheGet !== 'function' && typeof lightResultGet !== 'function')) {
-      failMeta(s, row, noteEl, '无法识别这条分享'); return;
-    }
+    if (!key || typeof serverCacheGet !== 'function') { failMeta(s, row, noteEl, '无法识别这条分享'); return; }
     try {
-      /* 两路并行竞速，谁先拿到合法结果用谁：
-       * ① 总缓存——首次下完后内存/session 命中，0ms 秒出；
-       * ② 轻量单条 2KB 结果——总缓存没加载过时(~1-2s)顶上。
-       * 旧版只先读轻量结果，即便总缓存已在内存也白等 2-4 秒，且期间显示兜底歌名
-       * 让用户误以为「解析失败」。并行后已缓存歌曲稳定 0-2 秒出真实结果。 */
-      const jobs = [];
-      if (typeof serverCacheGet === 'function') {
-        jobs.push(serverCacheGet(key).then(x => flat(x)).catch(() => null));
-      }
-      if (typeof lightResultGet === 'function') {
-        jobs.push(lightResultGet(key, 6000, 0).then(x => flat(x)).catch(() => null));
-      }
-      let e = null;
-      if (jobs.length) {
-        /* 谁先给出 good 结果就用谁并立即返回；若一路先返回但 non-good，
-         * 继续等其余路；全部 non-good 时取其中信息最全的一份往下走。 */
-        e = await new Promise(resolve => {
-          let settled = false, remain = jobs.length, lastGood = null;
-          jobs.forEach(p => p.then(x => {
-            if (settled) return;
-            if (good(x)) { settled = true; resolve(x); return; }
-            if (x && (!lastGood || Object.keys(x).length > Object.keys(lastGood).length)) lastGood = x;
-            if (--remain === 0) { settled = true; resolve(lastGood); }
-          }).catch(() => { if (--remain === 0 && !settled) { settled = true; resolve(lastGood); } }));
-          setTimeout(() => { if (!settled) { settled = true; resolve(lastGood); } }, 6000);
-        });
-      }
+      let e = flat(await serverCacheGet(key));
       if (!good(e)) {
         /* 旧缓存里只有第三方 audio 直链 → 一律不认，重新让自家仓库抓一遍 */
         if (typeof relayDispatch !== 'function') { failMeta(s, row, noteEl, '自家仓库中转不可用'); return; }
@@ -173,32 +137,10 @@ const Music = (() => {
         e = flat(got) || e;
       }
       if (good(e)) applyMeta(s, e, row);
-      else armBackground(s, row, noteEl, key);
+      else failMeta(s, row, noteEl, '自家仓库还在准备音频，再点一次解析即可');
     } catch (err) {
-      if (key) armBackground(s, row, noteEl, key);
-      else failMeta(s, row, noteEl, '仓库取音频失败，再点一次解析即可');
+      failMeta(s, row, noteEl, '仓库取音频失败，再点一次解析即可');
     }
-  }
-
-  /* 首次解析时音频可能还在自家仓库抓取中（约半分钟）。旧版只让用户「再点一次」，
-   * 很多人就此停住。改为后台静默补拉：每 5 秒看一眼轻量结果，音频一落库就自动
-   * 更新这张卡片（图标/播放器/下载/存库全部就位），最多守 3 分钟。 */
-  function armBackground(s, row, noteEl, key) {
-    failMeta(s, row, noteEl, '自家仓库正在抓音频，好了一会自动出现…');
-    if (typeof lightResultGet !== 'function' || !key) return;
-    let tries = 0;
-    const timer = setInterval(async () => {
-      if (++tries > 36 || s.localAudio) { clearInterval(timer); return; }
-      try {
-        const e = flat(await lightResultGet(key, 8000, 0));
-        if (good(e)) {
-          clearInterval(timer);
-          applyMeta(s, e, row);
-          if (noteEl) noteEl.textContent = '音频已就绪 · 可播放/下载/存库';
-          if (typeof toast === 'function') toast('「' + (e.title || s.title) + '」音频已就绪', 'ok');
-        }
-      } catch (err) {}
-    }, 5000);
   }
 
   function failMeta(s, row, note, msg) {
@@ -231,25 +173,19 @@ const Music = (() => {
     }
     const media = row.querySelector('.mu-media');
     if (media && s.localAudio) {
-      /* 音频文件在自家仓库，但 Pages 在国内只有 ~13KB/s（4MB 要 5 分钟），
-       * 直接用同源 <audio src> 点播会「很久才有声音」。改走 jsdelivr CDN（同一份文件，
-       * ~900KB/s），preload=metadata 让浏览器后台先把 moov 头/首段拉好，点播即响。 */
-      const playSrc = cdnURL(s.localAudio) || s.localAudio;
-      media.innerHTML = `<span class="mu-buf" data-buf>读取音源…</span>` +
-        `<audio controls preload="auto" src="${esc(playSrc)}"></audio>` +
-        (s.matched ? '<span class="mu-match">※ 已配同名版本</span>' : '') +
-        '<span class="mu-local">本站存档 · 点开即播</span>';
+      /* 本站同源文件直接给 audio：流式加载、点一下就响，不用等整首下完 */
+      media.innerHTML = `<audio controls preload="none" src="${esc(s.localAudio)}"></audio>` +
+        (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
+        '<span class="mu-local">本站同源文件 · 秒开播放</span>';
       const btn = row.querySelector('.mu-btn-dl');
       if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');
       if (sv) sv.disabled = false;
-      /* 统一绑定播放器（原生手势播放 + 后台预热），点下即响 */
-      attachPlayer(s, row);
     } else if (media) {
-      media.innerHTML = '<span class="mu-noaudio">音源整理中 · 可先点「打开原曲」</span>';
+      media.innerHTML = '<span class="mu-noaudio">暂无可下载音频 · 点「打开原曲」收听</span>';
     }
     const note = row.querySelector('.mu-enrich');
-    if (note) note.textContent = s.source ? String(s.source).replace(/（[^）]*）/g, '') : '音源已就绪';
+    if (note) note.textContent = s.source || '同源音频已就绪，可直接播放 / 下载';
   }
 
   /* ===== 只在「存到壁纸库」时才取整首字节 =====
@@ -258,31 +194,17 @@ const Music = (() => {
   async function ensureBlob(s) {
     if (s.blobUrl) return s.blobUrl;
     if (s._blobPromise) return s._blobPromise;
-    const norm = normLocal(s.localAudio);
-    if (!LOCAL_AUDIO_RE.test(norm)) return '';
+    if (!LOCAL_AUDIO_RE.test(s.localAudio || '')) return '';
     s._blobPromise = (async () => {
-      /* 通道竞速：CDN 秒下（~4s），同源 Pages 兜底。任一拿到合法音频字节即返回。
-       * 绝不整首走 Pages——实测 4MB 下 120 秒才 1.5MB，60s 超时必然失败。 */
-      const urls = [AUDIO_CDN + norm, s.localAudio];
-      return new Promise(resolve => {
-        let done = false, timer = null;
-        const finish = (u, blob) => {
-          if (done) return; done = true;
-          if (timer) clearTimeout(timer);
-          if (u) { s.blob = blob; s.blobUrl = URL.createObjectURL(blob); resolve(s.blobUrl); }
-          else resolve('');
-        };
-        /* 不用 AbortSignal.timeout()——旧版 iOS Safari 没有这个构造器，直接抛错会让整条链卡死。
-         * 靠上面的 finish 幂等 + 总超时即可，fetch 自己失败会走 catch。 */
-        urls.forEach(src => {
-          fetch(src).then(async r => {
-            if (!r.ok) return;
-            const b = await r.blob();
-            if (b && b.size >= 20000 && !/text\/html|application\/json/i.test(b.type || '')) finish(src, b);
-          }).catch(() => {});
-        });
-        timer = setTimeout(() => finish('', null), 50000);
-      });
+      try {
+        const r = await fetch(s.localAudio, { signal: AbortSignal.timeout(60000) });
+        if (!r.ok) return '';
+        const b = await r.blob();
+        if (!b || b.size < 20000 || /text\/html|application\/json/i.test(b.type || '')) return '';
+        s.blob = b;
+        s.blobUrl = URL.createObjectURL(b);
+        return s.blobUrl;
+      } catch (e) { return ''; }
     })();
     const u = await s._blobPromise;
     if (!u) s._blobPromise = null;    /* 失败允许下次重试（文件可能还没提交上来） */
@@ -297,54 +219,17 @@ const Music = (() => {
     return null;
   }
 
-  /* 后台预热：把整首歌下到内存 blob。就绪后「仅在用户还没开始播」时把 <audio>
-   * 的 src 换成 blob，这样之后点播是纯内存、点下即响。
-   * 关键纪律：绝不在用户播放后切 src、绝不 pause、绝不异步调用 play()。
-   * iOS Safari 只认用户手势同步栈里的播放，任何事后 play() 都会被拒绝——
-   * 上一版正是「点播放→pause→等 blob→异步 play()」，结果点了没声音。 */
-  function warmAudio(s, row) {
-    if (!LOCAL_AUDIO_RE.test(normLocal(s.localAudio))) return;
-    ensureBlob(s).then(u => {
-      if (!u) return;
-      const au = row && row.querySelector('.mu-media audio');
-      if (!au || au.dataset.onblob === '1') return;
-      if (au.dataset.fallback) return;   /* 已回退同源，别再动 */
-      /* 只有用户完全没碰过播放（暂停且在开头）才无缝换 src；正在听就绝不打断 */
-      if (!au.paused || (au.currentTime || 0) > 0) return;
-      au.dataset.onblob = '1';
-      try { au.src = u; au.load(); } catch (e) {}
-    }).catch(() => {});
-  }
-
-  /* 播放器绑定：保持原生 <audio> 的行为——用户点播放由浏览器在自己的手势栈里
-   * 处理，一定能响（CDN 流式，首段缓冲约 1 秒级）。我们只做三件事：
-   *   ① 后台预热 blob（就绪且用户未播时换 src，下次点播秒响）
-   *   ② 缓冲提示：canplay/playing 时隐藏
-   *   ③ CDN 失败回退同源相对路径
-   * 绝不拦截 play、pause 或事后 play()，否则 iOS 直接静音。 */
-  function attachPlayer(s, row) {
-    if (!row || !s.localAudio) return;
-    const au = row.querySelector('.mu-media audio');
-    const buf = row.querySelector('.mu-media [data-buf]');
-    if (!au || au.dataset.bound === '1') return;
-    au.dataset.bound = '1';
-    const hideBuf = () => { if (buf) buf.style.display = 'none'; };
-
-    au.addEventListener('canplay', hideBuf);
-    au.addEventListener('loadedmetadata', hideBuf);
-    au.addEventListener('playing', hideBuf);
-    au.addEventListener('error', () => {
-      if (au.dataset.fallback) return;
-      au.dataset.fallback = '1';
-      au.src = s.localAudio; au.load();
-    });
-
-    warmAudio(s, row);   /* 一渲染就后台预热，争取用户点之前就换好 blob */
-  }
-
   function download(s, btn) {
     const old = btn.textContent;
     if (!s.localAudio || !LOCAL_AUDIO_RE.test(s.localAudio)) {
+      /* 没有同源文件时，网易云退回官方直链：新窗口打开即可播放/另存。
+       * 跨域 a.download 会被浏览器忽略，所以这里用 window.open 更可靠。 */
+      if (s.directAudio) {
+        window.open(s.directAudio, '_blank', 'noopener');
+        btn.textContent = '已打开音源 ✓';
+        setTimeout(() => { btn.textContent = old; }, 3500);
+        return;
+      }
       btn.textContent = '音频没取到';
       const note = btn.closest('.mu-item') && btn.closest('.mu-item').querySelector('.mu-enrich');
       if (note) note.textContent = '自家仓库里的音频还没就绪，再点一次解析';
@@ -352,10 +237,10 @@ const Music = (() => {
       setTimeout(() => { btn.textContent = old; }, 3500);
       return;
     }
-    /* 自家仓库文件走 CDN + download 属性：浏览器原生流式下载，立刻开始，
-     * 不用先把 2~4MB 整首读进内存，也绝不打开任何第三方音频源。 */
+    /* 同源相对路径 + download 属性：浏览器原生流式下载，立刻开始，
+     * 不用先把 2~4MB 整首读进内存，也绝不打开任何第三方页面。 */
     const a = document.createElement('a');
-    a.href = cdnURL(s.localAudio) || s.localAudio;
+    a.href = s.localAudio;
     a.download = safeName(s);
     document.body.appendChild(a); a.click(); a.remove();
     btn.textContent = '已开始下载 ✓';
@@ -370,26 +255,44 @@ const Music = (() => {
       return;
     }
     const old = btn.textContent;
-    btn.disabled = true; btn.textContent = '提交中…';
-    if (!s.localAudio || !LOCAL_AUDIO_RE.test(normLocal(s.localAudio))) {
+    btn.disabled = true; btn.textContent = '获取中…';
+    const blob = await grabAudio(s);
+    if (!blob) {
       btn.textContent = '音频没取到';
       setTimeout(() => { btn.disabled = false; btn.textContent = old; }, 3000);
       return;
     }
+    btn.textContent = '提交中…';
     try {
       const name = '音乐_' + safeName(s);
       const title = ((s.title || '').trim() + (s.artist && !/官方|打开原曲/.test(s.artist) ? ' - ' + s.artist : '')).trim() || '音乐';
-      /* 音频已在仓库 data/audio/ 里，走 srcPath 零字节引用（拿 sha 直接进 tree），
-       * 不再下载整首→base64→上传 5MB。存库从 ~11s 降到 ~5s。 */
+      /* 封面随音乐一起入库：命名 <音频名去扩展>.cover.jpg，
+       * build-manifest 的 coverSuffix 正则会认这个格式，自动把 cover 字段关联回音乐条目。
+       * 抓同源封面字节（s.cover 已是本站 data/covers/ 下的相对路径），失败就跳过、不阻断入库。 */
+      let coverName = '', coverBytes = null;
+      if (s.cover && !/^https?:/i.test(s.cover)) {
+        try {
+          const cr = await fetch(s.cover, { signal: AbortSignal.timeout(20000) });
+          if (cr.ok) {
+            const cb = await cr.blob();
+            if (cb && cb.size > 500) {
+              const dot = name.lastIndexOf('.');
+              const base = dot > 0 ? name.slice(0, dot) : name;
+              /* 保留原封面扩展名（jpg/png/webp），正则都认 */
+              const m = /\.(jpe?g|png|webp|gif)$/i.exec(s.cover);
+              coverName = base + '.cover.' + (m ? m[1].toLowerCase() : 'jpg');
+              coverBytes = new Uint8Array(await cb.arrayBuffer());
+            }
+          }
+        } catch (e) {}
+      }
       const committed = await WPGH.importEntries([{
         name,
-        srcPath: normLocal(s.localAudio),
-        /* playUrl 指向英文同源路径，供壁纸库播放器走 CDN 秒播（中文名 CDN 会 404）。
-         * build-manifest 也会用 sha 匹配补这个字段，两边一致。 */
-        /* cover 指向自家仓库 data/covers/xx.jpg（译名英文路径，CDN 可用），
-         * 存进清单后音乐卡片与唱片机碟心都会显示这张真实封面。 */
-        itemExtra: { title, cat: '音乐', kind: 'audio', gif: false,
-          playUrl: normLocal(s.localAudio), cover: s.cover || '' },
+        bytes: new Uint8Array(await blob.arrayBuffer()),
+        size: blob.size,
+        coverName,
+        coverBytes,
+        itemExtra: { title, cat: '音乐', kind: 'audio', gif: false },
       }], { onStatus: (i, text) => { btn.textContent = text.slice(0, 8); } });
       try { committed.forEach(it => allItems.unshift(it)); renderAll(); } catch (e) {}
       if (typeof toast === 'function') toast('音乐已存入壁纸库', 'ok');
@@ -402,26 +305,29 @@ const Music = (() => {
     }
   }
 
-  /* ===== 唱片登记卡：方角、纸底、衬线、细线，平台色只留一道书脊 ===== */
-  function card(s, n) {
-    const no = String(n || 1).padStart(2, '0');
-    const media = s.localAudio
-      ? `<span class="mu-buf" data-buf>读取音源…</span>` +
-        `<audio controls preload="auto" src="${esc(cdnURL(s.localAudio) || s.localAudio)}"></audio>` +
-        (s.matched ? '<span class="mu-match">※ 已配同名版本</span>' : '') +
-        '<span class="mu-local">本站存档 · 点开即播</span>'
-      : '<span class="mu-noaudio mu-loading">正在识别歌名与音源…</span>';
+  /* ===== 卡片：平台彩色图标 + 音符图标 + 同源封面 ===== */
+  function card(s) {
+    /* 有同源文件就用同源；否则网易云有官方直链，立刻给 audio 秒开试听；
+     * 两者都没有才显示等待。同源就绪后 applyMeta 会把直链替换成同源文件。 */
+    const audible = s.localAudio || s.directAudio;
+    const media = audible
+      ? `<audio controls preload="none" src="${esc(audible)}"></audio>` +
+        (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
+        (s.localAudio
+          ? '<span class="mu-local">本站同源文件 · 秒开播放</span>'
+          : '<span class="mu-local">官方直链 · 秒开试听（下载/入库用同源备份）</span>')
+      : '<span class="mu-noaudio">等自家仓库备音频… · 可先点「打开原曲」</span>';
     return `<div class="mu-item" style="--mc:${s.color}">
       <div class="mu-cover ${s.cover ? 'has-img' : ''}">${s.cover ? '<img src="' + esc(s.cover) + '" referrerpolicy="no-referrer" alt="">' : ''}<span class="mu-note">${svg()}</span></div>
       <div class="mu-info">
         <div class="mu-title"><span class="mu-note-sm">${svg()}</span>${esc(s.title)}</div>
-        <div class="mu-artist">No.${no} &nbsp;·&nbsp; ${esc(s.artist || '佚名')}</div>
+        <div class="mu-artist">${esc(s.artist || ' ')}</div>
         <div class="mu-media">${media}</div>
         <div class="mu-enrich"></div>
       </div>
       <div class="mu-actions">
-        <button type="button" class="mu-btn-dl">下载</button>
-        <button type="button" class="mu-btn-save">存壁纸库</button>
+        <button type="button" class="mu-btn-dl">下载音乐</button>
+        <button type="button" class="mu-btn-save">存到壁纸库</button>
         <button type="button" class="mu-btn-open">打开原曲</button>
       </div>
     </div>`;
@@ -434,9 +340,7 @@ const Music = (() => {
     if (sv) sv.onclick = () => saveToLibrary(s, sv);
     const op = row.querySelector('.mu-btn-open');
     if (op) op.onclick = () => window.open(s.page || NE_HOME, '_blank', 'noopener');
-    /* 统一绑定播放器（拦截点播 + 后台预热）。card 若已带 localAudio 会在此预热；
-     * applyMeta 重建 media 后再绑定时，靠 audio.dataset.bound 防止重复绑定。 */
-    attachPlayer(s, row);
+    /* 本地 blob 播放器不会因第三方直链过期而报错，无需备用源切换 */
   }
 
   function renderInto(container, songs, note) {
@@ -444,14 +348,16 @@ const Music = (() => {
     if (!box) return;
     box.classList.remove('hidden');
     box.innerHTML =
-      `<div class="mu-head"><span class="mu-head-t">解析结果</span><span class="mu-head-sub">${esc(note || (songs.length + ' 首 · 唱片目录'))}</span></div>` +
-      '<div class="mu-list">' + songs.map((sc, i) => {
+      `<div class="mu-head"><span class="mu-head-t">解析结果</span><span class="mu-head-sub">${esc(note || (songs.length + ' 首'))}</span></div>` +
+      '<div class="mu-list">' + songs.map(sc => {
         const p = PLATS.find(x => x.key === sc.platform) || PLATS[0];
-        return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 22)}<b>${esc(p.name)}</b><span style="margin-left:auto;color:var(--dim)">${String(i + 1).padStart(2, '0')} / ${String(songs.length).padStart(2, '0')}</span></div>${card(sc, i + 1)}</div>`;
+        return `<div class="mu-row" data-plat="${p.key}"><div class="mu-row-hd">${brand(p, 24)}<b>${esc(p.name)}</b></div>${card(sc)}</div>`;
       }).join('') + '</div>' +
-      '<div class="mu-foot">卡片本地即出；歌名、歌手、封面与音频由本站自行抓取存档，页面不含任何第三方音源。' +
-      '首次解析约半分钟，之后即取即用。「下载」按原格式保存，「存壁纸库」收进「壁纸 → 音乐」。' +
-      '版权归原平台及权利人，仅作个人试听收藏。</div>';
+      '<div class="mu-foot">本地毫秒级出卡片；歌名 / 歌手 / 封面 / 官方音频由自家仓库代抓后存成同源文件，' +
+      '汽水优先官方原版（M4A），网易云为官方试听（MP3）。网易云识别到 ID 即给官方直链秒开试听，' +
+      '后台同时抓同源永久备份供下载/入库；汽水音频会过期，只能走同源代抓（首次约半分钟，之后秒出）。' +
+      '点【下载音乐】按原格式保存，点【存到壁纸库】永久进「壁纸 → 音乐」。' +
+      '版权归原平台及权利人，仅个人试听收藏。</div>';
     box.querySelectorAll('.mu-row').forEach((row, i) => bindCard(row, songs[i]));
     return box;
   }
@@ -499,7 +405,7 @@ const Music = (() => {
       if (e && e.kind === 'music' && !e.err) cacheOK++;
       if (good(e)) {
         try {
-          const r = await fetch(e.localAudio, { method: 'HEAD' });
+          const r = await fetch(e.localAudio, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
           if (r.ok) localOK++;
         } catch (err) {}
       }
@@ -523,59 +429,51 @@ const Music = (() => {
     const st = document.createElement('style');
     st.id = 'music-styles';
     st.textContent = `
-/* 音乐解析 —— 唱片目录卡 / 标本登记册。纸底、细线、衬线、留白，无渐变无药丸。 */
-.mu-plats{display:flex;flex-wrap:wrap;gap:7px;margin:6px 0 2px}
-.mu-plat{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-deep);background:transparent;border-radius:2px;padding:6px 11px 6px 7px;font-family:var(--serif);font-size:12.5px;font-weight:700;color:var(--ink-2);cursor:pointer;letter-spacing:.04em;transition:none}
-.mu-plat:hover{border-color:var(--moss);color:var(--moss-deep);background:var(--moss-paper)}
-.mu-plat .mu-brand{--ms:20px}
-.mu-brand{display:inline-flex;align-items:center;justify-content:center;width:var(--ms,20px);height:var(--ms,20px);border-radius:1px;background:var(--mc);color:#fff;flex:none;position:relative;overflow:hidden}
+.mu-plats{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 14px}
+.mu-plat{display:inline-flex;align-items:center;gap:6px;border:1px solid #e6eaf1;background:#fff;border-radius:999px;padding:6px 12px 6px 6px;font-size:12px;font-weight:600;color:#4b5563;cursor:pointer;transition:.15s}
+.mu-plat:hover{border-color:var(--mc);color:var(--mc);transform:translateY(-1px)}
+.mu-plat .mu-brand{--ms:24px}
+.mu-brand{display:inline-flex;align-items:center;justify-content:center;width:var(--ms,22px);height:var(--ms,22px);border-radius:8px;background:var(--mc);color:#fff;flex:none;position:relative;overflow:hidden}
 .mu-brand svg{position:absolute;inset:0;width:100%;height:100%}
-.mu-brand svg:first-child{width:74%;height:74%;margin:auto;z-index:1}
-.mu-head{display:flex;align-items:baseline;gap:12px;margin:16px 0 12px;border-bottom:2px solid var(--ink);padding-bottom:6px}
-.mu-head-t{font-family:var(--serif);font-size:17px;font-weight:900;color:var(--ink);letter-spacing:.08em}
-.mu-head-sub{font-size:11px;color:var(--dim);margin-left:auto;font-family:var(--serif);letter-spacing:.1em}
-.mu-testline{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}
-.mu-test{font-size:11px;border:1px solid var(--line);background:var(--paper-2);color:var(--ink-2);padding:3px 8px;border-radius:1px;font-family:var(--serif)}
-.mu-test.ok{border-color:var(--moss);color:var(--moss-deep);background:var(--moss-paper)}
-.mu-test.bad{border-color:var(--terracotta);color:var(--terracotta)}
-.mu-list{display:flex;flex-direction:column;gap:14px}
-.mu-row{background:transparent;border-left:3px solid var(--mc);padding:2px 0 2px 14px}
-.mu-row-hd{display:flex;align-items:center;gap:7px;font-family:var(--serif);font-size:12.5px;color:var(--ink-2);margin-bottom:9px;letter-spacing:.05em}
-.mu-row-hd b{font-weight:900;color:var(--ink)}
-.mu-item{display:flex;gap:14px;align-items:flex-start;background:var(--paper);border:1px solid var(--line);border-radius:2px;padding:14px}
-.mu-cover{width:70px;height:70px;border-radius:1px;flex:none;position:relative;overflow:hidden;background:var(--paper-3);border:1px solid var(--line-deep);display:flex;align-items:center;justify-content:center;color:var(--moss-deep)}
-.mu-cover::after{content:"";position:absolute;inset:4px;border:1px dotted var(--line-deep);pointer-events:none}
+.mu-brand svg:first-child{width:76%;height:76%;margin:auto;z-index:1}
+.mu-head{display:flex;align-items:center;gap:10px;margin:14px 0 10px}
+.mu-head-t{font-size:15px;font-weight:800;color:#1f2937}
+.mu-head-sub{font-size:11px;color:#8a94a6;margin-left:auto}
+.mu-testline{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.mu-test{font-size:11px;font-weight:700;border-radius:999px;padding:4px 9px;background:#f1f4f9;color:#5b6472}
+.mu-test.ok{background:#f0fdf4;color:#15803d}
+.mu-test.bad{background:#fef2f2;color:#b91c1c}
+.mu-list{display:flex;flex-direction:column;gap:10px}
+.mu-row{background:#f8fafd;border:1px solid #e9edf4;border-radius:14px;padding:10px}
+.mu-row-hd{display:flex;align-items:center;gap:6px;font-size:12px;color:#4b5563;margin-bottom:8px}
+.mu-item{display:flex;gap:12px;align-items:center;background:#fff;border:1px solid #e8ecf3;border-radius:12px;padding:10px}
+.mu-cover{width:62px;height:62px;border-radius:10px;flex:none;position:relative;overflow:hidden;background:linear-gradient(135deg,#a5b4fc,#f0abfc);display:flex;align-items:center;justify-content:center;color:#fff}
 .mu-cover img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
 .mu-cover.has-img .mu-note{display:none}
-.mu-note{width:30px;height:30px;position:relative;z-index:1}
+.mu-note{width:28px;height:28px;position:relative;z-index:1}
 .mu-note svg{width:100%;height:100%}
 .mu-info{flex:1;min-width:0}
-.mu-title{display:flex;align-items:center;gap:6px;font-family:var(--serif);font-size:16px;font-weight:900;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.03em}
+.mu-title{display:flex;align-items:center;gap:5px;font-size:14px;font-weight:700;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mu-note-sm{width:14px;height:14px;flex:none;color:var(--mc)}
 .mu-note-sm svg{width:100%;height:100%}
-.mu-artist{font-size:11.5px;color:var(--dim);margin:4px 0 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.06em}
-.mu-media{min-height:32px;border-top:1px dotted var(--line-deep);padding-top:9px}
-.mu-item audio{width:100%;height:34px;display:block}
-.mu-noaudio{font-size:11px;color:var(--dim);display:inline-block;padding:2px 0}
-.mu-loading{color:var(--moss-deep);animation:muPulse 1.1s ease-in-out infinite}
-@keyframes muPulse{0%,100%{opacity:.45}50%{opacity:1}}
-@media (prefers-reduced-motion:reduce){.mu-loading{animation:none}}
-.mu-pending{font-size:11px;color:var(--moss-deep);display:inline-block;padding:2px 0}
-.mu-match{display:inline-block;margin-top:5px;font-size:10.5px;color:var(--honey);font-family:var(--serif)}
-.mu-local{display:inline-block;margin-top:5px;margin-left:10px;font-size:10.5px;color:var(--moss-deep);font-family:var(--serif)}
-.mu-buf{display:inline-block;font-size:11px;color:var(--moss-deep);margin-bottom:3px;font-family:var(--serif);letter-spacing:.06em}
-.mu-buf::before{content:"· ";color:var(--terracotta)}
-.mu-enrich{font-size:10.5px;color:var(--dim);margin-top:6px;min-height:14px;letter-spacing:.03em}
-.mu-actions{display:flex;flex-direction:column;gap:6px;flex:none;width:104px}
-.mu-actions button{border:1px solid var(--line-deep);border-radius:1px;background:var(--paper);padding:7px 5px;font-family:var(--serif);font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;color:var(--ink-2);letter-spacing:.05em}
-.mu-actions button:hover{background:var(--paper-3)}
-.mu-btn-dl{color:var(--moss-deep)!important;border-color:var(--moss)!important}
-.mu-btn-save{color:var(--terracotta)!important;border-color:var(--terracotta)!important}
+.mu-artist{font-size:11px;color:#8a94a6;margin:3px 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mu-media{min-height:32px}
+.mu-item audio{width:100%;height:32px;display:block}
+.mu-noaudio{font-size:11px;color:#98a1b0;background:#f5f7fb;border-radius:7px;padding:4px 8px;display:inline-block}
+.mu-pending{font-size:11px;color:#0369a1;background:#f0f9ff;border-radius:7px;padding:4px 8px;display:inline-block}
+.mu-match{display:inline-block;margin-top:4px;font-size:10px;color:#b45309;background:#fffbeb;border-radius:6px;padding:2px 6px}
+.mu-local{display:inline-block;margin-top:4px;margin-left:5px;font-size:10px;color:#0f766e;background:#f0fdfa;border-radius:6px;padding:2px 6px}
+.mu-enrich{font-size:10.5px;color:#98a1b0;margin-top:3px;min-height:14px}
+.mu-actions{display:grid;grid-template-columns:1fr;gap:5px;flex:none;width:118px}
+.mu-actions button{border:none;border-radius:9px;padding:7px 6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.mu-btn-dl{background:var(--mc);color:#fff}
+.mu-btn-save{background:#fff7ed;color:#c2410c}
+.mu-btn-open{background:#f1f4f9;color:#5b6472}
 .mu-actions button:disabled{opacity:.4;cursor:not-allowed}
-.mu-foot{font-family:var(--serif);font-size:11px;color:var(--dim);margin-top:16px;line-height:1.8;border-top:1px dotted var(--line-deep);padding-top:10px;letter-spacing:.02em}
-.mu-err{border:1px solid var(--terracotta);color:var(--terracotta);background:var(--paper);border-radius:1px;padding:12px 14px;font-family:var(--serif);font-size:12.5px}
+.mu-foot{font-size:11px;color:#9aa3b2;margin-top:10px;line-height:1.6}
+.mu-err{background:#fef2f2;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:12px}
 .hidden{display:none!important}
-@media(max-width:520px){.mu-item{gap:10px;padding:11px;flex-wrap:wrap}.mu-cover{width:58px;height:58px}.mu-actions{width:100%;flex-direction:row}.mu-actions button{flex:1;padding:8px 3px;font-size:11px}.mu-title{font-size:15px}}
+@media(max-width:520px){.mu-item{gap:8px;padding:8px}.mu-cover{width:52px;height:52px}.mu-actions{width:104px}.mu-actions button{padding:6px 4px;font-size:10.5px}}
 `;
     document.head.appendChild(st);
   }
@@ -613,12 +511,6 @@ const Music = (() => {
     }
     const test = $('mu-test');
     if (test) test.addEventListener('click', () => selftest('mu-result'));
-    const clear = $('mu-clear');
-    if (clear) clear.addEventListener('click', () => {
-      if (inp) { inp.value = ''; inp.focus(); }
-      const box = $('mu-result');
-      if (box) { box.innerHTML = ''; box.classList.add('hidden'); }
-    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -86,7 +86,7 @@ const Music = (() => {
       title: g.title || (id ? p.short + ' · 歌曲 ' + id.slice(0, 12) : p.name + ' 分享歌曲'),
       artist: g.artist || '',
       album: '', cover: '',
-      localAudio: '', audioExt: '', source: '', matched: false,
+      localAudio: '', audioExt: '', audioAt: 0, source: '', matched: false,
       /* 网易云官方长期外链：识别到 ID 即可秒开试听，不用等自家仓库代抓；
        * 汽水音频带签名会过期、无长期外链，留空继续走代抓。 */
       directAudio: (p.key === 'netease' && /^\d{5,14}$/.test(id))
@@ -105,6 +105,21 @@ const Music = (() => {
     return e;
   }
   const good = e => !!(e && e.kind === 'music' && !e.err && e.localAudio && LOCAL_AUDIO_RE.test(e.localAudio));
+
+  /* 新结果的 JSON 可经 GitHub API 立刻读到，但 Pages 音频可能还没发布。
+   * 刚入库的 15 分钟改读自家仓库 raw（文件名固定、无签名、可长期缓存），
+   * 老缓存继续走同源 Pages，兼顾首次秒开与日常加载速度。 */
+  function audioSrc(s) {
+    const p = s && s.localAudio || '';
+    if (!LOCAL_AUDIO_RE.test(p)) return '';
+    const cfg = (typeof WPGH !== 'undefined' && WPGH.cfg) ? WPGH.cfg : null;
+    const fresh = s.audioAt && Date.now() - s.audioAt < 15 * 60 * 1000;
+    if (fresh && cfg && cfg.owner && cfg.repo && cfg.branch) {
+      return 'https://raw.githubusercontent.com/' + encodeURIComponent(cfg.owner) + '/' +
+        encodeURIComponent(cfg.repo) + '/' + encodeURIComponent(cfg.branch) + '/' + p;
+    }
+    return p;
+  }
 
   function cacheKeyOf(s) {
     let key = '';
@@ -157,6 +172,7 @@ const Music = (() => {
     s.cover = e.cover || s.cover;
     s.localAudio = e.localAudio || '';
     s.audioExt = e.audioExt || (/\.m4a$/i.test(s.localAudio) ? 'm4a' : 'mp3');
+    s.audioAt = Date.parse(e.ts || '') || 0;
     s.source = e.source || '';
     s.matched = !!e.matched;
     if (!row) return;
@@ -174,9 +190,9 @@ const Music = (() => {
     const media = row.querySelector('.mu-media');
     if (media && s.localAudio) {
       /* 本站同源文件直接给 audio：流式加载、点一下就响，不用等整首下完 */
-      media.innerHTML = `<audio controls preload="none" src="${esc(s.localAudio)}"></audio>` +
+      media.innerHTML = `<audio controls preload="none" src="${esc(audioSrc(s))}"></audio>` +
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
-        '<span class="mu-local">本站同源文件 · 秒开播放</span>';
+        '<span class="mu-local">自家仓库永久音频 · 秒开播放</span>';
       const btn = row.querySelector('.mu-btn-dl');
       if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');
@@ -197,7 +213,7 @@ const Music = (() => {
     if (!LOCAL_AUDIO_RE.test(s.localAudio || '')) return '';
     s._blobPromise = (async () => {
       try {
-        const r = await fetch(s.localAudio, { signal: AbortSignal.timeout(60000) });
+        const r = await fetch(audioSrc(s), { signal: AbortSignal.timeout(60000) });
         if (!r.ok) return '';
         const b = await r.blob();
         if (!b || b.size < 20000 || /text\/html|application\/json/i.test(b.type || '')) return '';
@@ -309,12 +325,12 @@ const Music = (() => {
   function card(s) {
     /* 有同源文件就用同源；否则网易云有官方直链，立刻给 audio 秒开试听；
      * 两者都没有才显示等待。同源就绪后 applyMeta 会把直链替换成同源文件。 */
-    const audible = s.localAudio || s.directAudio;
+    const audible = audioSrc(s) || s.directAudio;
     const media = audible
       ? `<audio controls preload="none" src="${esc(audible)}"></audio>` +
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
         (s.localAudio
-          ? '<span class="mu-local">本站同源文件 · 秒开播放</span>'
+          ? '<span class="mu-local">自家仓库永久音频 · 秒开播放</span>'
           : '<span class="mu-local">官方直链 · 秒开试听（下载/入库用同源备份）</span>')
       : '<span class="mu-noaudio">等自家仓库备音频… · 可先点「打开原曲」</span>';
     return `<div class="mu-item" style="--mc:${s.color}">

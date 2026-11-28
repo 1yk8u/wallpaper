@@ -233,7 +233,8 @@ async function relayPoll(key, since, onTick) {
    * 结果一落库立刻发现（旧版固定 sleep 3 秒，白等 2 秒）。
    * 慢通道兜底：之后放慢到 3 秒，总时长仍覆盖约 2 分钟。 */
   for (let i = 0; i < 60; i++) {
-    await sleep(i < 20 ? 1000 : 3000);
+    /* 先立即查一次再等：结果若已秒出就不白等第一秒；之后前 20 轮 1 秒密集轮询 */
+    if (i > 0) await sleep(i < 20 ? 1000 : 3000);
     let e = await lightResultGet(key, 12000, since);  /* 只读单条小文件，按 ts 取最新 */
     if (!e && i % 10 === 9) {             /* 三通道全不通时，偶尔刷一次总缓存兜底 */
       const entries = await loadCache(true, 15000);

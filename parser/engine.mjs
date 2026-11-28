@@ -620,8 +620,17 @@ async function parseBilibili(url) {
       const durl = p && p.result && p.result.durl && p.result.durl[0];
       if (p && p.code === 0 && durl && durl.url) { found = { p, durl, qn }; break; }
     }
-    if (!found)
-      fail('RISK', 'PGC playurl 没给直链（会员内容可能仅登录可看）。已拿到封面/标题/分集，会员完整版需大会员登录');
+    /* 拿不到直链（境外 IP / 会员限制）也要把封面/标题/分集吐出来——
+     * 保证「至少能看到这是什么剧、有哪些集」，play 为空交给前端降级展示。 */
+    if (!found) {
+      return {
+        kind: 'video', images: [], play: '', cover, title,
+        size: 0, preview: true, noPlay: true,
+        episodes, seasonTitle, episodeCount: eps.length,
+        via: 'bilibili-pgc-meta-only',
+        note: '已解析封面/标题/分集；直链受会员或区域限制，完整版需大会员登录。本地解析或境内 IP 通常可拿到试看直链',
+      };
+    }
 
     return {
       kind: 'video', images: [], play: found.durl.url, cover, title,

@@ -76,7 +76,7 @@ const MANIFEST_KEY = 'wp_manifest_v7';
  * 20261121B：音乐条目新增 playUrl（英文 CDN 路径），旧版缓存没有它会导致播放走中文慢路径失败。
  * 20261121K：音乐条目新增 cover（封面路径），旧版缓存没有它导致卡片/碟心只显示默认音符。
  * 20261121L：音乐条目改为从 data/audio 生成（不再依赖 wallpapers/ 音频），重建清单后音乐不再消失。 */
-const MANIFEST_URL = 'data/wallpapers.json?v=20261121L';
+const MANIFEST_URL = 'data/wallpapers.json?v=20261128A';
 function manifestCacheRead() {
   try {
     const j = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null');

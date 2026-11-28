@@ -164,6 +164,13 @@ async function runOne(raw) {
     kind: r.kind, images: r.images || [], play: r.play || '', cover: r.cover || '',
     title: r.title || '', via: r.via || '接口', platform: r.platform || key,
     platformName: plat.name, ts: ts(),
+    /* B站 ep/ss 剧集元数据：透传给前端展示封面/标题/分集/试看标记 */
+    ...(r.preview !== undefined ? { preview: r.preview } : {}),
+    ...(r.episodes ? { episodes: r.episodes } : {}),
+    ...(r.seasonTitle ? { seasonTitle: r.seasonTitle } : {}),
+    ...(r.episodeCount !== undefined ? { episodeCount: r.episodeCount } : {}),
+    ...(r.noPlay ? { noPlay: r.noPlay } : {}),
+    ...(r.note ? { note: r.note } : {}),
   };
 }
 
@@ -194,6 +201,7 @@ for (const raw of urls) {
     const entry = cKey
       ? { ...r, engine: ENGINE_VERSION, ts: r.ts || ts() }
       : {
+          ...r,  /* 保留全部字段（B站剧集的 preview/episodes/seasonTitle 等） */
           kind: r.kind, images: r.images || [], play: r.play || '', cover: r.cover || '',
           title: r.title || '', via: r.via || '', platform: r.platform,
           engine: ENGINE_VERSION, ts: r.ts,

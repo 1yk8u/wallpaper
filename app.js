@@ -12,7 +12,7 @@ const CFG = (() => {
 })();
 
 let allItems = [];
-let curType = 'all';
+let curType = 'image';   /* 壁纸 / 电影 / 音乐 三分开，默认只显示壁纸 */
 let curQ = '';
 let curCat = 'all';
 const CAT_LIST = ['全部', '二次元', '汽车', '风景', '萌宠', '游戏', '文字', '综合'];
@@ -230,16 +230,10 @@ function itemDyn(it) { return it.kind === 'video' || it.gif === true; }
 function itemAudio(it) { return it.kind === 'audio'; }
 
 function matchFilter(it) {
-  /* 音乐只在「全部 / 音乐」里出现；图片/视频分类下不混入音频 */
-  if (itemAudio(it)) {
-    if (curType !== 'all' && curType !== 'audio') return false;
-  } else if (curType === 'audio') {
-    return false;
-  } else if (curType === 'image' && itemDyn(it)) {
-    return false;
-  } else if (curType === 'video' && !itemDyn(it)) {
-    return false;
-  }
+  /* 壁纸 / 电影 / 音乐 三类严格分开：每一类只显示自己的内容，互不混入 */
+  if (curType === 'image' && (itemAudio(it) || itemDyn(it))) return false;
+  if (curType === 'video' && (itemAudio(it) || !itemDyn(it))) return false;
+  if (curType === 'audio' && !itemAudio(it)) return false;
   if (curCat !== 'all' && (it.cat || '综合') !== curCat) return false;
   if (curQ && !(it.title || '').toLowerCase().includes(curQ)) return false;
   return true;
@@ -249,14 +243,17 @@ function matchFilter(it) {
 function renderCatChips() {
   const box = $id('cat-filter');
   if (!box) return;
+  /* 分类条只统计「当前类型」下的条目：切到壁纸就只列壁纸的分类，
+   * 不再把音乐/电影的分类混进来（三类彻底分开）。 */
+  const scoped = allItems.filter(matchFilter);
   const counts = {};
-  allItems.forEach(it => { const c = it.cat || '综合'; counts[c] = (counts[c] || 0) + 1; });
+  scoped.forEach(it => { const c = it.cat || '综合'; counts[c] = (counts[c] || 0) + 1; });
   const present = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
   if (curCat !== 'all' && !present.includes(curCat)) curCat = 'all';
   box.hidden = present.length < 2;
   box.innerHTML = ['全部'].concat(present).map(c => {
     const on = (c === '全部') ? (curCat === 'all') : (curCat === c);
-    const n = (c === '全部') ? allItems.length : counts[c];
+    const n = (c === '全部') ? scoped.length : counts[c];
     return `<button class="chip${on ? ' active' : ''}" data-cat="${escAttr(c)}">${esc(c)} <span class="cnt">(${n})</span></button>`;
   }).join('');
   $$('#cat-filter .chip').forEach(ch => ch.addEventListener('click', () => {
@@ -277,11 +274,14 @@ function renderAll() {
     else if (itemDyn(it)) nVid++;
     else nImg++;
   });
-  $id('cnt-all').textContent = nAll ? '(' + nAll + ')' : '';
   $id('cnt-image').textContent = nImg ? '(' + nImg + ')' : '';
   $id('cnt-video').textContent = nVid ? '(' + nVid + ')' : '';
   const cntAud = $id('cnt-audio');
   if (cntAud) cntAud.textContent = nAud ? '(' + nAud + ')' : '';
+
+  /* 类型栏已去掉「全部」按钮，cnt-all 元素不再存在，避免空引用 */
+  const cntAll = $id('cnt-all');
+  if (cntAll) cntAll.textContent = nAll ? '(' + nAll + ')' : '';
 
   const grid = $id('grid');
   gridList = allItems.filter(matchFilter);
@@ -481,7 +481,7 @@ function initOnboard() {
       : (apply.live && apply.live !== '全部' ? apply.live : null);
     if (same) {
       curCat = apply.wall;
-      curType = 'all';
+      curType = 'image';
       syncTypeChips();
       renderAll();
       toast('已按你的口味只布展「' + apply.wall + '」，点分类条里的「全部」随时看其他');

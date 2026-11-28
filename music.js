@@ -120,6 +120,19 @@ const Music = (() => {
     }
     return p;
   }
+  /* 试听专用候选地址（快→稳）。实测 256KB 首包：jsdmirror 0.21s / raw 0.47s /
+   * 同源 Pages 极慢（~12KB/s）。老缓存不再走慢速同源，一律先试 CDN。
+   * 全部支持 Range 206，拖动进度/续传不会从头断。 */
+  function audioPlayCands(s) {
+    const p = s && s.localAudio || '';
+    if (!LOCAL_AUDIO_RE.test(p)) return [];
+    const cfg = (typeof WPGH !== 'undefined' && WPGH.cfg) ? WPGH.cfg : null;
+    const owner = (cfg && cfg.owner) || '1yk8u', repo = (cfg && cfg.repo) || 'wallpaper';
+    const raw = 'https://raw.githubusercontent.com/' + owner + '/' + repo + '/main/' + p;
+    const jsd = 'https://cdn.jsdmirror.com/gh/' + owner + '/' + repo + '@main/' + p;
+    const off = 'https://cdn.jsdelivr.net/gh/' + owner + '/' + repo + '@main/' + p;
+    return [jsd, raw, off, p].filter((u, i, a) => u && a.indexOf(u) === i);
+  }
 
   function cacheKeyOf(s) {
     let key = '';
@@ -189,10 +202,28 @@ const Music = (() => {
     }
     const media = row.querySelector('.mu-media');
     if (media && s.localAudio) {
-      /* 本站同源文件直接给 audio：流式加载、点一下就响，不用等整首下完 */
-      media.innerHTML = `<audio controls preload="none" src="${esc(audioSrc(s))}"></audio>` +
+      /* 试听走最快 CDN 起步，加载失败按候选逐级回退并接回进度，避免播放中断。
+       * 全部候选支持 Range 206，拖动进度条不会从头重下。 */
+      const cands = audioPlayCands(s);
+      media.innerHTML = `<audio controls preload="metadata" src="${esc(cands[0] || audioSrc(s))}"></audio>` +
         (s.matched ? '<span class="mu-match">已匹配网易云同名版本</span>' : '') +
         '<span class="mu-local">自家仓库永久音频 · 秒开播放</span>';
+      const au = media.querySelector('audio');
+      if (au && cands.length > 1) {
+        let tryIdx = 0;
+        au.addEventListener('error', () => {
+          if (tryIdx >= cands.length - 1) return;
+          const at = au.currentTime, playing = !au.paused;
+          tryIdx++;
+          const nxt = cands[tryIdx];
+          try { au.src = nxt; au.load(); } catch (e) {}
+          if (at > 0) au.addEventListener('loadedmetadata', function restore() {
+            au.removeEventListener('loadedmetadata', restore);
+            try { au.currentTime = at; } catch (e) {}
+            if (playing) { const p = au.play(); if (p && p.catch) p.catch(() => {}); }
+          });
+        });
+      }
       const btn = row.querySelector('.mu-btn-dl');
       if (btn) btn.disabled = false;
       const sv = row.querySelector('.mu-btn-save');

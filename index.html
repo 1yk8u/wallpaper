@@ -17,6 +17,18 @@
 </head>
 <body>
 
+<!-- 登录门：未登录先去自建登录页，已登录才渲染壁纸库 -->
+<script>
+(function () {
+  try {
+    if (!localStorage.getItem('wp_session')) {
+      location.replace('./login.html');
+      return;
+    }
+  } catch (e) {}
+})();
+</script>
+
 <div id="toasts" class="toasts"></div>
 
 <!-- 首开问答：空盘问你要什么口味 -->
@@ -271,7 +283,7 @@
 <script src="core.js?v=20261114F"></script>
 <script src="img-accel.js?v=20261117A"></script>
 <script src="player.js?v=20261120A"></script>
-<script src="app.js?v=20261128C"></script>
+<script src="app.js?v=20261128D"></script>
 <script src="extractor.js?v=20261128B"></script>
 <script src="music.js?v=20261128C"></script>
 <script src="payment.js?v=20261119A"></script>
